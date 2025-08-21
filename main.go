@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/davidbyttow/govips/v2/vips"
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/proto"
 )
@@ -123,6 +124,31 @@ func takeScreenshot(url string) ([]byte, error) {
 	})
 }
 
+func processScreenshot(url string, resizeParam string) ([]byte, string, error) {
+	// Take screenshot
+	img, err := takeScreenshot(url)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Apply resizing if specified
+	if resizeParam != "" {
+		params, err := parseResizeString(resizeParam)
+		if err != nil {
+			return nil, "", fmt.Errorf("invalid resize parameters: %v", err)
+		}
+
+		resized, format, err := resizeImage(img, params)
+		if err != nil {
+			return nil, "", fmt.Errorf("resize failed: %v", err)
+		}
+
+		return resized, getContentType(format), nil
+	}
+
+	return img, "image/png", nil
+}
+
 func handleScreenshot(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -140,26 +166,36 @@ func handleScreenshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	img, err := takeScreenshot(url)
+	resizeParam := r.URL.Query().Get("resize")
+	img, contentType, err := processScreenshot(url, resizeParam)
 	duration := time.Since(start)
 
 	metrics.TotalDuration.Add(uint64(duration.Nanoseconds()))
 	if err != nil {
 		metrics.FailedRequests.Add(1)
-		http.Error(w, fmt.Sprintf("Error taking screenshot: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("Error processing screenshot: %v", err), http.StatusInternalServerError)
 		return
 	} else {
 		metrics.SuccessRequests.Add(1)
 	}
 
-	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Content-Type", contentType)
 	w.Write(img)
 }
 
 func main() {
 	httpMode := flag.Bool("http", false, "Start HTTP server mode")
 	listen := flag.String("listen", "localhost:8080", "Address to listen on for HTTP server")
+	resize := flag.String("resize", "", "Resize parameters (e.g. 100x200, 100x200!, 100x200#)")
 	flag.Parse()
+
+	vips.Startup(&vips.Config{
+		ConcurrencyLevel: 1,
+		MaxCacheFiles:    0,
+		MaxCacheMem:      0,
+		MaxCacheSize:     0,
+	})
+	defer vips.Shutdown()
 
 	if *httpMode {
 		mux := http.NewServeMux()
@@ -169,21 +205,21 @@ func main() {
 		handler := loggingMiddleware(mux)
 
 		fmt.Printf("Starting HTTP server on %s\n", *listen)
-		fmt.Printf("Usage: http://%s/?url=https://leafo.net\n", *listen)
+		fmt.Printf("Usage: http://%s/?url=https://leafo.net&resize=100x200\n", *listen)
 		fmt.Printf("Metrics: http://%s/metrics\n", *listen)
 		log.Fatal(http.ListenAndServe(*listen, handler))
 	}
 
 	if len(flag.Args()) != 1 {
-		fmt.Fprintf(os.Stderr, "Usage: %s [--http] <URL>\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [--resize WxH] [--http] <URL>\n", os.Args[0])
 		os.Exit(1)
 	}
 
 	url := flag.Args()[0]
 
-	img, err := takeScreenshot(url)
+	img, _, err := processScreenshot(url, *resize)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error taking screenshot: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error processing screenshot: %v\n", err)
 		os.Exit(1)
 	}
 

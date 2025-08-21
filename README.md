@@ -13,12 +13,28 @@ go install github.com/leafo/sitecap@latest
 ### Command Line Mode
 
 ```bash
-sitecap <URL> > screenshot.png
+sitecap [--resize WxH] <URL> > screenshot.png
 ```
 
-Example:
+Examples:
 ```bash
+# Basic screenshot
 sitecap https://example.com > example.png
+
+# Resize to 800x600 maintaining aspect ratio
+sitecap --resize 800x600 https://example.com > resized.png
+
+# Force exact dimensions (ignore aspect ratio)
+sitecap --resize 800x600! https://example.com > stretched.png
+
+# Resize and center crop to exact dimensions
+sitecap --resize 800x600# https://example.com > cropped.png
+
+# Resize by percentage
+sitecap --resize 50%x50% https://example.com > half-size.png
+
+# Crop manually with offset
+sitecap --resize 200x200+100+50 https://example.com > cropped-offset.png
 ```
 
 ### HTTP Server Mode
@@ -35,7 +51,20 @@ sitecap --http --listen 0.0.0.0:8080
 
 Take screenshots via HTTP requests:
 ```bash
+# Basic screenshot
 curl "http://localhost:8080/?url=https://example.com" > screenshot.png
+
+# With resize parameter
+curl "http://localhost:8080/?url=https://example.com&resize=800x600" > resized.png
+
+# Force exact dimensions
+curl "http://localhost:8080/?url=https://example.com&resize=800x600!" > stretched.png
+
+# Resize and center crop (URL-safe)
+curl "http://localhost:8080/?url=https://example.com&resize=800x600^" > cropped.png
+
+# Manual crop with offset (URL-safe)
+curl "http://localhost:8080/?url=https://example.com&resize=200x200_100_50" > crop-offset.png
 ```
 
 ### Metrics
@@ -50,6 +79,26 @@ Available metrics:
 - `sitecap_requests_success_total` - Number of successful requests  
 - `sitecap_requests_failed_total` - Number of failed requests
 - `sitecap_duration_seconds_total` - Total time spent taking screenshots
+
+## Resize Parameters
+
+Sitecap supports powerful image resizing with the following syntax:
+
+- `WxH` - Resize maintaining aspect ratio to fit within dimensions (e.g. `800x600`)
+- `WxH!` - Force exact dimensions, ignoring aspect ratio (e.g. `800x600!`)  
+- `WxH#` or `WxH^` - Resize and center crop to exact dimensions (e.g. `800x600#` or `800x600^`)
+- `P%xP%` - Resize by percentage (e.g. `50%x50%` for half size)
+- `WxH+X+Y` or `WxH_X_Y` - Manual crop to WxH starting at offset X,Y (e.g. `200x200+100+50` or `200x200_100_50`)
+
+You can also specify only width or height:
+- `800x` - Resize to width 800, height auto-calculated
+- `x600` - Resize to height 600, width auto-calculated
+
+### URL-Safe Alternatives
+
+For HTTP requests, use these URL-safe alternatives:
+- Use `^` instead of `#` for center crop: `800x600^`
+- Use `_` instead of `+` for crop offsets: `200x200_100_50`
 
 ## Systemd Service Installation
 
