@@ -1,0 +1,43 @@
+[Unit]
+Description=Sitecap - Website Screenshot Service
+Documentation=https://github.com/leafo/sitecap
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=sitecap
+Group=sitecap
+ExecStart=/usr/local/bin/sitecap --http --listen localhost:8080
+Restart=always
+RestartSec=5
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/tmp
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Resource limits
+LimitNOFILE=65536
+PrivateDevices=yes
+
+# Working directory
+WorkingDirectory=/var/lib/sitecap
+
+# Environment
+Environment=DISPLAY=:99
+
+[Install]
+WantedBy=multi-user.target
