@@ -3,4 +3,4 @@ build:
 
 
 run: build
-	./sitecap --http --listen localhost:9191
+	./sitecap --debug --http --listen localhost:9191

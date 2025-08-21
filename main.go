@@ -25,6 +25,7 @@ type Metrics struct {
 }
 
 var metrics Metrics
+var globalDebug bool
 
 func (m *Metrics) String() string {
 	var sb strings.Builder
@@ -112,11 +113,67 @@ func (m *Metrics) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, m.String())
 }
 
-func takeScreenshot(url string) ([]byte, error) {
+func takeScreenshot(url string, viewportWidth, viewportHeight int, timeoutSeconds int, domainWhitelist []string, debugMode bool) ([]byte, error) {
 	browser := rod.New().MustConnect()
 	defer browser.MustClose()
 
-	page := browser.MustPage(url).MustWaitLoad()
+	page := browser.MustPage()
+
+	// Set up request hijacking for debugging and/or domain filtering
+	if debugMode || len(domainWhitelist) > 0 {
+		router := page.HijackRequests()
+		router.MustAdd("*", func(ctx *rod.Hijack) {
+			requestURL := ctx.Request.URL().String()
+
+			// Debug logging
+			if debugMode {
+				log.Printf("[DEBUG] Request: %s", requestURL)
+			}
+
+			// Always allow the main requested URL
+			if requestURL == url {
+				if debugMode {
+					log.Printf("[DEBUG] Allowed (main URL): %s", requestURL)
+				}
+				ctx.ContinueRequest(&proto.FetchContinueRequest{})
+				return
+			}
+
+			// Domain filtering
+			if len(domainWhitelist) > 0 {
+				if isDomainWhitelisted(requestURL, domainWhitelist) {
+					if debugMode {
+						log.Printf("[DEBUG] Allowed: %s", requestURL)
+					}
+					ctx.ContinueRequest(&proto.FetchContinueRequest{})
+				} else {
+					if debugMode {
+						log.Printf("[DEBUG] Blocked: %s", requestURL)
+					}
+					ctx.Response.Fail(proto.NetworkErrorReasonBlockedByClient)
+				}
+			} else {
+				// No filtering, just continue
+				ctx.ContinueRequest(&proto.FetchContinueRequest{})
+			}
+		})
+		go router.Run()
+	}
+
+	// Set timeout if specified
+	if timeoutSeconds > 0 {
+		page = page.Timeout(time.Duration(timeoutSeconds) * time.Second)
+	}
+
+	// Navigate to URL
+	page.MustNavigate(url)
+
+	// Set viewport if dimensions are specified
+	if viewportWidth > 0 && viewportHeight > 0 {
+		page.MustSetViewport(viewportWidth, viewportHeight, 1.0, false)
+	}
+
+	page.MustWaitLoad()
 
 	return page.Screenshot(false, &proto.PageCaptureScreenshot{
 		Format:      proto.PageCaptureScreenshotFormatPng,
@@ -124,9 +181,21 @@ func takeScreenshot(url string) ([]byte, error) {
 	})
 }
 
-func processScreenshot(url string, resizeParam string) ([]byte, string, error) {
+func processScreenshot(url string, viewportParam string, resizeParam string, timeoutSeconds int, allowedDomains string, debugMode bool) ([]byte, string, error) {
+	// Parse viewport dimensions
+	viewportWidth, viewportHeight, err := parseViewportString(viewportParam)
+	if err != nil {
+		return nil, "", fmt.Errorf("invalid viewport parameters: %v", err)
+	}
+
+	// Parse domain whitelist
+	domainWhitelist, err := parseDomainWhitelist(allowedDomains)
+	if err != nil {
+		return nil, "", fmt.Errorf("invalid domain whitelist: %v", err)
+	}
+
 	// Take screenshot
-	img, err := takeScreenshot(url)
+	img, err := takeScreenshot(url, viewportWidth, viewportHeight, timeoutSeconds, domainWhitelist, debugMode)
 	if err != nil {
 		return nil, "", err
 	}
@@ -166,8 +235,19 @@ func handleScreenshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	viewportParam := r.URL.Query().Get("viewport")
 	resizeParam := r.URL.Query().Get("resize")
-	img, contentType, err := processScreenshot(url, resizeParam)
+	timeoutParam := r.URL.Query().Get("timeout")
+	domainsParam := r.URL.Query().Get("domains")
+
+	timeoutSeconds, err := parseTimeoutString(timeoutParam)
+	if err != nil {
+		metrics.FailedRequests.Add(1)
+		http.Error(w, fmt.Sprintf("Invalid timeout parameter: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	img, contentType, err := processScreenshot(url, viewportParam, resizeParam, timeoutSeconds, domainsParam, globalDebug)
 	duration := time.Since(start)
 
 	metrics.TotalDuration.Add(uint64(duration.Nanoseconds()))
@@ -186,8 +266,15 @@ func handleScreenshot(w http.ResponseWriter, r *http.Request) {
 func main() {
 	httpMode := flag.Bool("http", false, "Start HTTP server mode")
 	listen := flag.String("listen", "localhost:8080", "Address to listen on for HTTP server")
+	viewport := flag.String("viewport", "", "Viewport dimensions for the browser (e.g. 1920x1080)")
 	resize := flag.String("resize", "", "Resize parameters (e.g. 100x200, 100x200!, 100x200#)")
+	timeout := flag.Int("timeout", 0, "Timeout in seconds for page load and screenshot (0 = no timeout)")
+	domains := flag.String("domains", "", "Comma-separated list of allowed domains (e.g. example.com,*.cdn.com)")
+	debug := flag.Bool("debug", false, "Enable debug logging of all network requests")
 	flag.Parse()
+
+	// Set global debug flag
+	globalDebug = *debug
 
 	vips.Startup(&vips.Config{
 		ConcurrencyLevel: 1,
@@ -205,19 +292,22 @@ func main() {
 		handler := loggingMiddleware(mux)
 
 		fmt.Printf("Starting HTTP server on %s\n", *listen)
-		fmt.Printf("Usage: http://%s/?url=https://leafo.net&resize=100x200\n", *listen)
+		fmt.Printf("Usage: http://%s/?url=https://leafo.net&viewport=1920x1080&resize=100x200&timeout=30&domains=example.com,*.cdn.com\n", *listen)
 		fmt.Printf("Metrics: http://%s/metrics\n", *listen)
+		if *debug {
+			fmt.Println("Debug mode enabled - all network requests will be logged")
+		}
 		log.Fatal(http.ListenAndServe(*listen, handler))
 	}
 
 	if len(flag.Args()) != 1 {
-		fmt.Fprintf(os.Stderr, "Usage: %s [--resize WxH] [--http] <URL>\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [--viewport WxH] [--resize WxH] [--timeout N] [--domains list] [--debug] [--http] <URL>\n", os.Args[0])
 		os.Exit(1)
 	}
 
 	url := flag.Args()[0]
 
-	img, _, err := processScreenshot(url, *resize)
+	img, _, err := processScreenshot(url, *viewport, *resize, *timeout, *domains, *debug)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error processing screenshot: %v\n", err)
 		os.Exit(1)

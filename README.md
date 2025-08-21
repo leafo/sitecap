@@ -13,7 +13,7 @@ go install github.com/leafo/sitecap@latest
 ### Command Line Mode
 
 ```bash
-sitecap [--resize WxH] <URL> > screenshot.png
+sitecap [--viewport WxH] [--resize WxH] [--timeout N] [--domains list] [--debug] <URL> > screenshot.png
 ```
 
 Examples:
@@ -21,8 +21,23 @@ Examples:
 # Basic screenshot
 sitecap https://example.com > example.png
 
-# Resize to 800x600 maintaining aspect ratio
-sitecap --resize 800x600 https://example.com > resized.png
+# Set browser viewport to 1920x1080 before taking screenshot
+sitecap --viewport 1920x1080 https://example.com > desktop.png
+
+# Mobile viewport
+sitecap --viewport 375x667 https://example.com > mobile.png
+
+# Set 30 second timeout for slow-loading pages
+sitecap --timeout 30 https://slow-site.com > slow.png
+
+# Only load resources from specific domains
+sitecap --domains "example.com,*.cloudfront.net" https://example.com > filtered.png
+
+# Enable debug logging to see all network requests
+sitecap --debug https://example.com > debug.png 2>requests.log
+
+# Full example with all parameters
+sitecap --viewport 1920x1080 --resize 800x600 --timeout 15 --domains "example.com,cdn.example.com" --debug https://example.com > complete.png
 
 # Force exact dimensions (ignore aspect ratio)
 sitecap --resize 800x600! https://example.com > stretched.png
@@ -54,9 +69,29 @@ Take screenshots via HTTP requests:
 # Basic screenshot
 curl "http://localhost:8080/?url=https://example.com" > screenshot.png
 
-# With resize parameter
-curl "http://localhost:8080/?url=https://example.com&resize=800x600" > resized.png
+# Set browser viewport
+curl "http://localhost:8080/?url=https://example.com&viewport=1920x1080" > desktop.png
 
+# Mobile viewport
+curl "http://localhost:8080/?url=https://example.com&viewport=375x667" > mobile.png
+
+# Set 30 second timeout for slow pages
+curl "http://localhost:8080/?url=https://slow-site.com&timeout=30" > slow.png
+
+# Whitelist specific domains only
+curl "http://localhost:8080/?url=https://example.com&domains=example.com,*.cloudfront.net" > filtered.png
+
+# Full example with all parameters
+curl "http://localhost:8080/?url=https://example.com&viewport=1920x1080&resize=800x600&timeout=15&domains=example.com,cdn.example.com" > full.png
+```
+
+**Debug Mode**: Start the server with `--debug` flag to see all network requests in the server logs:
+```bash
+sitecap --debug --http --listen localhost:8080
+```
+
+More examples:
+```bash
 # Force exact dimensions
 curl "http://localhost:8080/?url=https://example.com&resize=800x600!" > stretched.png
 
@@ -76,16 +111,71 @@ curl "http://localhost:8080/metrics"
 
 Available metrics:
 - `sitecap_requests_total` - Total number of screenshot requests
-- `sitecap_requests_success_total` - Number of successful requests  
+- `sitecap_requests_success_total` - Number of successful requests
 - `sitecap_requests_failed_total` - Number of failed requests
 - `sitecap_duration_seconds_total` - Total time spent taking screenshots
+
+## Viewport Parameters
+
+Control the browser viewport size before capturing the screenshot:
+
+- `--viewport WxH` - Set browser viewport dimensions (e.g. `1920x1080`)
+- `?viewport=WxH` - HTTP query parameter for viewport size
+
+Common viewport sizes:
+- Desktop: `1920x1080`, `1366x768`, `1280x1024`
+- Tablet: `768x1024`, `1024x768`
+- Mobile: `375x667` (iPhone), `414x896` (iPhone XR), `360x640` (Android)
+
+**Note**: Viewport affects how the webpage renders before screenshot capture. This is different from resize, which processes the image after capture.
+
+## Timeout Parameters
+
+Control how long to wait for page loading and screenshot generation:
+
+- `--timeout N` - CLI flag to set timeout in seconds
+- `?timeout=N` - HTTP query parameter for timeout
+
+**Timeout behavior:**
+- `0` (default) - No timeout, wait indefinitely
+- `1-300` - Timeout in seconds (max 5 minutes)
+- Applies to both page loading and screenshot generation
+
+**Use cases:**
+- Slow-loading websites: `--timeout 30`
+- Quick captures: `--timeout 5`
+- Heavy JavaScript sites: `--timeout 60`
+
+## Domain Whitelisting
+
+Control which domains can load resources to improve performance and reduce bandwidth:
+
+- `--domains "list"` - CLI flag for comma-separated domain patterns
+- `?domains=list` - HTTP query parameter for domain filtering
+
+**Domain patterns supported:**
+- Exact domains: `example.com`
+- Wildcards: `*.cloudfront.net` matches `abc.cloudfront.net`
+- Subdomain matching: `.example.com` matches `sub.example.com` and `example.com`
+- Multiple domains: `example.com,cdn.example.com,*.amazonaws.com`
+
+**Benefits:**
+- **Faster loading**: Block ads, trackers, and unnecessary resources
+- **Reduced bandwidth**: Only load essential resources
+- **Cleaner screenshots**: Remove third-party content
+- **Better performance**: Fewer network requests
+
+**Use cases:**
+- Remove ads: `--domains "example.com"`
+- CDN only: `--domains "example.com,*.cloudfront.net"`
+- Multiple services: `--domains "site.com,api.site.com,*.cdn.com"`
 
 ## Resize Parameters
 
 Sitecap supports powerful image resizing with the following syntax:
 
 - `WxH` - Resize maintaining aspect ratio to fit within dimensions (e.g. `800x600`)
-- `WxH!` - Force exact dimensions, ignoring aspect ratio (e.g. `800x600!`)  
+- `WxH!` - Force exact dimensions, ignoring aspect ratio (e.g. `800x600!`)
 - `WxH#` or `WxH^` - Resize and center crop to exact dimensions (e.g. `800x600#` or `800x600^`)
 - `P%xP%` - Resize by percentage (e.g. `50%x50%` for half size)
 - `WxH+X+Y` or `WxH_X_Y` - Manual crop to WxH starting at offset X,Y (e.g. `200x200+100+50` or `200x200_100_50`)
