@@ -1,4 +1,4 @@
-module screenshoter
+module github.com/leafo/sitecap
 
 go 1.24.1
 
