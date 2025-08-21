@@ -1,6 +1,6 @@
 # sitecap
 
-Command line tool for taking screenshots of websites.
+Tool for taking screenshots of websites using Chrome CDP, available in both command line and HTTP service modes.
 
 ## Installation
 
