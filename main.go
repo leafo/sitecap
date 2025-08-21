@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -26,6 +27,7 @@ type Metrics struct {
 
 var metrics Metrics
 var globalDebug bool
+var globalCustomHeaders map[string]string
 
 func (m *Metrics) String() string {
 	var sb strings.Builder
@@ -113,14 +115,28 @@ func (m *Metrics) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, m.String())
 }
 
-func takeScreenshot(url string, viewportWidth, viewportHeight int, timeoutSeconds int, domainWhitelist []string, debugMode bool) ([]byte, error) {
+func parseCustomHeaders(headersJSON string) (map[string]string, error) {
+	if headersJSON == "" {
+		return nil, nil
+	}
+
+	var headers map[string]string
+	err := json.Unmarshal([]byte(headersJSON), &headers)
+	if err != nil {
+		return nil, fmt.Errorf("invalid JSON format: %v", err)
+	}
+
+	return headers, nil
+}
+
+func takeScreenshot(url string, viewportWidth, viewportHeight int, timeoutSeconds int, domainWhitelist []string, debugMode bool, customHeaders map[string]string) ([]byte, error) {
 	browser := rod.New().MustConnect()
 	defer browser.MustClose()
 
 	page := browser.MustPage()
 
-	// Set up request hijacking for debugging and/or domain filtering
-	if debugMode || len(domainWhitelist) > 0 {
+	// Set up request hijacking for debugging, domain filtering, or custom headers
+	if debugMode || len(domainWhitelist) > 0 || len(customHeaders) > 0 {
 		router := page.HijackRequests()
 		router.MustAdd("*", func(ctx *rod.Hijack) {
 			requestURL := ctx.Request.URL().String()
@@ -135,7 +151,35 @@ func takeScreenshot(url string, viewportWidth, viewportHeight int, timeoutSecond
 				if debugMode {
 					log.Printf("[DEBUG] Allowed (main URL): %s", requestURL)
 				}
-				ctx.ContinueRequest(&proto.FetchContinueRequest{})
+				// Apply custom headers to the main request
+				if len(customHeaders) > 0 {
+					// Convert headers to the format expected by Rod
+					var headers []*proto.FetchHeaderEntry
+					// First add existing headers
+					for name, values := range ctx.Request.Req().Header {
+						for _, value := range values {
+							headers = append(headers, &proto.FetchHeaderEntry{
+								Name:  name,
+								Value: value,
+							})
+						}
+					}
+					// Then add custom headers (will override existing ones with same name)
+					for k, v := range customHeaders {
+						headers = append(headers, &proto.FetchHeaderEntry{
+							Name:  k,
+							Value: v,
+						})
+					}
+					if debugMode {
+						log.Printf("[DEBUG] Adding custom headers: %+v", customHeaders)
+					}
+					ctx.ContinueRequest(&proto.FetchContinueRequest{
+						Headers: headers,
+					})
+				} else {
+					ctx.ContinueRequest(&proto.FetchContinueRequest{})
+				}
 				return
 			}
 
@@ -195,7 +239,7 @@ func processScreenshot(url string, viewportParam string, resizeParam string, tim
 	}
 
 	// Take screenshot
-	img, err := takeScreenshot(url, viewportWidth, viewportHeight, timeoutSeconds, domainWhitelist, debugMode)
+	img, err := takeScreenshot(url, viewportWidth, viewportHeight, timeoutSeconds, domainWhitelist, debugMode, globalCustomHeaders)
 	if err != nil {
 		return nil, "", err
 	}
@@ -270,11 +314,20 @@ func main() {
 	resize := flag.String("resize", "", "Resize parameters (e.g. 100x200, 100x200!, 100x200#)")
 	timeout := flag.Int("timeout", 0, "Timeout in seconds for page load and screenshot (0 = no timeout)")
 	domains := flag.String("domains", "", "Comma-separated list of allowed domains (e.g. example.com,*.cdn.com)")
+	headers := flag.String("headers", "", "JSON string of custom headers to add to the initial request (e.g. '{\"Authorization\":\"Bearer token\",\"Custom-Header\":\"value\"}')")
 	debug := flag.Bool("debug", false, "Enable debug logging of all network requests")
 	flag.Parse()
 
 	// Set global debug flag
 	globalDebug = *debug
+
+	// Parse and set global custom headers
+	var err error
+	globalCustomHeaders, err = parseCustomHeaders(*headers)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing headers: %v\n", err)
+		os.Exit(1)
+	}
 
 	vips.Startup(&vips.Config{
 		ConcurrencyLevel: 1,
@@ -293,6 +346,9 @@ func main() {
 
 		fmt.Printf("Starting HTTP server on %s\n", *listen)
 		fmt.Printf("Usage: http://%s/?url=https://leafo.net&viewport=1920x1080&resize=100x200&timeout=30&domains=example.com,*.cdn.com\n", *listen)
+		if len(globalCustomHeaders) > 0 {
+			fmt.Printf("Custom headers will be applied to all requests: %+v\n", globalCustomHeaders)
+		}
 		fmt.Printf("Metrics: http://%s/metrics\n", *listen)
 		if *debug {
 			fmt.Println("Debug mode enabled - all network requests will be logged")
@@ -301,7 +357,7 @@ func main() {
 	}
 
 	if len(flag.Args()) != 1 {
-		fmt.Fprintf(os.Stderr, "Usage: %s [--viewport WxH] [--resize WxH] [--timeout N] [--domains list] [--debug] [--http] <URL>\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [--viewport WxH] [--resize WxH] [--timeout N] [--domains list] [--headers JSON] [--debug] [--http] <URL>\n", os.Args[0])
 		os.Exit(1)
 	}
 
