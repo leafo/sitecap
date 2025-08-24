@@ -5,9 +5,27 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/davidbyttow/govips/v2/vips"
 )
+
+var (
+	vipsInitOnce    sync.Once
+	vipsInitialized bool
+)
+
+func initVips() {
+	vipsInitOnce.Do(func() {
+		vips.Startup(&vips.Config{
+			ConcurrencyLevel: 1,
+			MaxCacheFiles:    0,
+			MaxCacheMem:      0,
+			MaxCacheSize:     0,
+		})
+		vipsInitialized = true
+	})
+}
 
 type ResizeParams struct {
 	Width       int
@@ -154,6 +172,9 @@ func exportImage(image *vips.ImageRef, format vips.ImageType) ([]byte, error) {
 }
 
 func resizeImage(buf []byte, params *ResizeParams) ([]byte, vips.ImageType, error) {
+	// Initialize vips if not already done
+	initVips()
+
 	// Determine input format
 	format, err := getImageFormat(buf)
 	if err != nil {

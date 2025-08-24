@@ -13,7 +13,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/davidbyttow/govips/v2/vips"
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/proto"
 )
@@ -329,13 +328,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	vips.Startup(&vips.Config{
-		ConcurrencyLevel: 1,
-		MaxCacheFiles:    0,
-		MaxCacheMem:      0,
-		MaxCacheSize:     0,
-	})
-	defer vips.Shutdown()
 
 	if *httpMode {
 		mux := http.NewServeMux()
