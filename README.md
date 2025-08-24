@@ -14,6 +14,7 @@ go install github.com/leafo/sitecap@latest
 
 ```bash
 sitecap [--viewport WxH] [--resize WxH] [--timeout N] [--domains list] [--debug] <URL> > screenshot.png
+sitecap [options] - < input.html > screenshot.png
 ```
 
 Examples:
@@ -50,7 +51,34 @@ sitecap --resize 50%x50% https://example.com > half-size.png
 
 # Crop manually with offset
 sitecap --resize 200x200+100+50 https://example.com > cropped-offset.png
+
+# Render HTML from stdin instead of a URL
+echo "<html><body><h1>Hello World</h1></body></html>" | sitecap --viewport 800x600 - > html-screenshot.png
+
+# Process HTML file with domain filtering
+sitecap --viewport 1200x800 --resize 600x400 --domains "example.com,cdn.example.com" - < my-page.html > processed.png
 ```
+
+### HTML from Stdin
+
+Instead of capturing a live website, you can render HTML content directly from stdin by using `-` as the URL:
+
+```bash
+# Render HTML string
+echo "<html><body><h1>Hello World</h1></body></html>" | sitecap - > output.png
+
+# Process HTML file with options
+sitecap --viewport 1200x800 --resize 600x400 - < my-page.html > screenshot.png
+
+# Filter external resources when rendering HTML
+sitecap --domains "cdn.example.com,fonts.googleapis.com" --debug - < my-page.html > filtered.png
+```
+
+**Use cases:**
+- Generate screenshots from dynamic HTML content
+- Test HTML layouts without deploying to a web server
+- Process HTML templates with custom data
+- Create images from programmatically generated HTML
 
 ### HTTP Server Mode
 
