@@ -129,20 +129,20 @@ func parseCustomHeaders(headersJSON string) (map[string]string, error) {
 	return headers, nil
 }
 
-func setupRequestHijacking(page *rod.Page, mainURL string, domainWhitelist []string, debugMode bool, customHeaders map[string]string) {
-	if debugMode || len(domainWhitelist) > 0 || len(customHeaders) > 0 {
+func setupRequestHijacking(page *rod.Page, mainURL string, domainWhitelist []string, customHeaders map[string]string) {
+	if globalDebug || len(domainWhitelist) > 0 || len(customHeaders) > 0 {
 		router := page.HijackRequests()
 		router.MustAdd("*", func(ctx *rod.Hijack) {
 			requestURL := ctx.Request.URL().String()
 
 			// Debug logging
-			if debugMode {
+			if globalDebug {
 				log.Printf("[DEBUG] Request: %s", requestURL)
 			}
 
 			// Always allow the main requested URL
 			if mainURL != "" && requestURL == mainURL {
-				if debugMode {
+				if globalDebug {
 					log.Printf("[DEBUG] Allowed (main URL): %s", requestURL)
 				}
 				// Apply custom headers to the main request
@@ -164,7 +164,7 @@ func setupRequestHijacking(page *rod.Page, mainURL string, domainWhitelist []str
 							Value: v,
 						})
 					}
-					if debugMode {
+					if globalDebug {
 						log.Printf("[DEBUG] Adding custom headers: %+v", customHeaders)
 					}
 					ctx.ContinueRequest(&proto.FetchContinueRequest{
@@ -179,7 +179,7 @@ func setupRequestHijacking(page *rod.Page, mainURL string, domainWhitelist []str
 			// Domain filtering
 			if len(domainWhitelist) > 0 {
 				if isDomainWhitelisted(requestURL, domainWhitelist) {
-					if debugMode {
+					if globalDebug {
 						log.Printf("[DEBUG] Allowed: %s", requestURL)
 					}
 					// Apply custom headers if any
@@ -208,7 +208,7 @@ func setupRequestHijacking(page *rod.Page, mainURL string, domainWhitelist []str
 						ctx.ContinueRequest(&proto.FetchContinueRequest{})
 					}
 				} else {
-					if debugMode {
+					if globalDebug {
 						log.Printf("[DEBUG] Blocked: %s", requestURL)
 					}
 					ctx.Response.Fail(proto.NetworkErrorReasonBlockedByClient)
@@ -245,14 +245,14 @@ func setupRequestHijacking(page *rod.Page, mainURL string, domainWhitelist []str
 	}
 }
 
-func takeScreenshotFromHTML(htmlContent string, viewportWidth, viewportHeight int, timeoutSeconds int, domainWhitelist []string, debugMode bool, customHeaders map[string]string) ([]byte, error) {
+func takeScreenshotFromHTML(htmlContent string, viewportWidth, viewportHeight int, timeoutSeconds int, domainWhitelist []string, customHeaders map[string]string) ([]byte, error) {
 	browser := rod.New().MustConnect()
 	defer browser.MustClose()
 
 	page := browser.MustPage()
 
 	// Set up request hijacking for debugging, domain filtering, or custom headers
-	setupRequestHijacking(page, "", domainWhitelist, debugMode, customHeaders)
+	setupRequestHijacking(page, "", domainWhitelist, customHeaders)
 
 	// Set timeout if specified
 	if timeoutSeconds > 0 {
@@ -274,14 +274,14 @@ func takeScreenshotFromHTML(htmlContent string, viewportWidth, viewportHeight in
 	})
 }
 
-func takeScreenshot(url string, viewportWidth, viewportHeight int, timeoutSeconds int, domainWhitelist []string, debugMode bool, customHeaders map[string]string) ([]byte, error) {
+func takeScreenshot(url string, viewportWidth, viewportHeight int, timeoutSeconds int, domainWhitelist []string, customHeaders map[string]string) ([]byte, error) {
 	browser := rod.New().MustConnect()
 	defer browser.MustClose()
 
 	page := browser.MustPage()
 
 	// Set up request hijacking for debugging, domain filtering, or custom headers
-	setupRequestHijacking(page, url, domainWhitelist, debugMode, customHeaders)
+	setupRequestHijacking(page, url, domainWhitelist, customHeaders)
 
 	// Set timeout if specified
 	if timeoutSeconds > 0 {
@@ -304,7 +304,7 @@ func takeScreenshot(url string, viewportWidth, viewportHeight int, timeoutSecond
 	})
 }
 
-func processScreenshotFromHTML(htmlContent string, viewportParam string, resizeParam string, timeoutSeconds int, allowedDomains string, debugMode bool) ([]byte, string, error) {
+func processScreenshotFromHTML(htmlContent string, viewportParam string, resizeParam string, timeoutSeconds int, allowedDomains string) ([]byte, string, error) {
 	// Parse viewport dimensions
 	viewportWidth, viewportHeight, err := parseViewportString(viewportParam)
 	if err != nil {
@@ -318,7 +318,7 @@ func processScreenshotFromHTML(htmlContent string, viewportParam string, resizeP
 	}
 
 	// Take screenshot from HTML
-	img, err := takeScreenshotFromHTML(htmlContent, viewportWidth, viewportHeight, timeoutSeconds, domainWhitelist, debugMode, globalCustomHeaders)
+	img, err := takeScreenshotFromHTML(htmlContent, viewportWidth, viewportHeight, timeoutSeconds, domainWhitelist, globalCustomHeaders)
 	if err != nil {
 		return nil, "", err
 	}
@@ -341,7 +341,7 @@ func processScreenshotFromHTML(htmlContent string, viewportParam string, resizeP
 	return img, "image/png", nil
 }
 
-func processScreenshot(url string, viewportParam string, resizeParam string, timeoutSeconds int, allowedDomains string, debugMode bool) ([]byte, string, error) {
+func processScreenshot(url string, viewportParam string, resizeParam string, timeoutSeconds int, allowedDomains string) ([]byte, string, error) {
 	// Parse viewport dimensions
 	viewportWidth, viewportHeight, err := parseViewportString(viewportParam)
 	if err != nil {
@@ -355,7 +355,7 @@ func processScreenshot(url string, viewportParam string, resizeParam string, tim
 	}
 
 	// Take screenshot
-	img, err := takeScreenshot(url, viewportWidth, viewportHeight, timeoutSeconds, domainWhitelist, debugMode, globalCustomHeaders)
+	img, err := takeScreenshot(url, viewportWidth, viewportHeight, timeoutSeconds, domainWhitelist, globalCustomHeaders)
 	if err != nil {
 		return nil, "", err
 	}
@@ -407,7 +407,7 @@ func handleScreenshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	img, contentType, err := processScreenshot(url, viewportParam, resizeParam, timeoutSeconds, domainsParam, globalDebug)
+	img, contentType, err := processScreenshot(url, viewportParam, resizeParam, timeoutSeconds, domainsParam)
 	duration := time.Since(start)
 
 	metrics.TotalDuration.Add(uint64(duration.Nanoseconds()))
@@ -444,7 +444,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error parsing headers: %v\n", err)
 		os.Exit(1)
 	}
-
 
 	if *httpMode {
 		mux := http.NewServeMux()
@@ -488,7 +487,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		img, _, err := processScreenshotFromHTML(htmlContent, *viewport, *resize, *timeout, *domains, *debug)
+		img, _, err := processScreenshotFromHTML(htmlContent, *viewport, *resize, *timeout, *domains)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error processing HTML screenshot: %v\n", err)
 			os.Exit(1)
@@ -502,7 +501,7 @@ func main() {
 		return
 	}
 
-	img, _, err := processScreenshot(url, *viewport, *resize, *timeout, *domains, *debug)
+	img, _, err := processScreenshot(url, *viewport, *resize, *timeout, *domains)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error processing screenshot: %v\n", err)
 		os.Exit(1)
