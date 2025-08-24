@@ -172,10 +172,11 @@ func parseRequestConfig(viewportParam, resizeParam, timeoutParam, domainsParam s
 }
 
 type HijackConfig struct {
-	MainURL         string
-	DomainWhitelist []string
-	CustomHeaders   map[string]string
-	Debug           bool
+	MainURL            string
+	DomainWhitelist    []string
+	CustomHeaders      map[string]string
+	Debug              bool
+	PermitFirstRequest bool // Always permit the first request regardless of authorized domains
 }
 
 func setupRequestHijacking(page *rod.Page, config *HijackConfig) {
@@ -207,7 +208,7 @@ func setupRequestHijacking(page *rod.Page, config *HijackConfig) {
 			}
 
 			// Always allow the very first request regardless of domain
-			if firstRequest.CompareAndSwap(true, false) {
+			if config.PermitFirstRequest && firstRequest.CompareAndSwap(true, false) {
 				if config.Debug {
 					log.Printf("\033[32mAllowed (first request):\033[0m %s", requestURL)
 				}
@@ -319,10 +320,11 @@ func takeScreenshotFromHTML(htmlContent string, config *RequestConfig) ([]byte, 
 
 	// Set up request hijacking for debugging, domain filtering, or custom headers
 	hijackConfig := &HijackConfig{
-		MainURL:         "",
-		DomainWhitelist: config.DomainWhitelist,
-		CustomHeaders:   config.CustomHeaders,
-		Debug:           config.Debug,
+		MainURL:            "",
+		DomainWhitelist:    config.DomainWhitelist,
+		CustomHeaders:      config.CustomHeaders,
+		Debug:              config.Debug,
+		PermitFirstRequest: false,
 	}
 	setupRequestHijacking(page, hijackConfig)
 
@@ -354,10 +356,11 @@ func takeScreenshot(url string, config *RequestConfig) ([]byte, error) {
 
 	// Set up request hijacking for debugging, domain filtering, or custom headers
 	hijackConfig := &HijackConfig{
-		MainURL:         url,
-		DomainWhitelist: config.DomainWhitelist,
-		CustomHeaders:   config.CustomHeaders,
-		Debug:           config.Debug,
+		MainURL:            url,
+		DomainWhitelist:    config.DomainWhitelist,
+		CustomHeaders:      config.CustomHeaders,
+		Debug:              config.Debug,
+		PermitFirstRequest: true,
 	}
 	setupRequestHijacking(page, hijackConfig)
 
