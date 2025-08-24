@@ -183,27 +183,35 @@ func setupRequestHijacking(page *rod.Page, config *HijackConfig) {
 	if config.Debug {
 		go page.EachEvent(func(e *proto.NetworkResponseReceived) {
 			response := e.Response
-			log.Printf("[DEBUG] Response: %s - Status: %d - Size: %d bytes",
-				response.URL, response.Status, int64(response.EncodedDataLength))
+			statusColor := "\033[32m" // Green for 2xx
+			if response.Status >= 400 {
+				statusColor = "\033[31m" // Red for 4xx/5xx
+			} else if response.Status >= 300 {
+				statusColor = "\033[33m" // Yellow for 3xx
+			}
+			log.Printf("\033[36mResponse:\033[0m %s - Status: %s%d\033[0m - Size: %d bytes",
+				response.URL, statusColor, response.Status, int64(response.EncodedDataLength))
 		})()
 	}
 
 	if config.Debug || len(config.DomainWhitelist) > 0 || len(config.CustomHeaders) > 0 {
 		router := page.HijackRequests()
+		var firstRequest atomic.Bool
+		firstRequest.Store(true)
 		router.MustAdd("*", func(ctx *rod.Hijack) {
 			requestURL := ctx.Request.URL().String()
 
 			// Debug logging
 			if config.Debug {
-				log.Printf("[DEBUG] Request: %s", requestURL)
+				log.Printf("\033[34mRequest:\033[0m %s", requestURL)
 			}
 
-			// Always allow the main requested URL
-			if config.MainURL != "" && requestURL == config.MainURL {
+			// Always allow the very first request regardless of domain
+			if firstRequest.CompareAndSwap(true, false) {
 				if config.Debug {
-					log.Printf("[DEBUG] Allowed (main URL): %s", requestURL)
+					log.Printf("\033[32mAllowed (first request):\033[0m %s", requestURL)
 				}
-				// Apply custom headers to the main request
+				// Apply custom headers to the first request
 				if len(config.CustomHeaders) > 0 {
 					var headers []*proto.FetchHeaderEntry
 					// First add existing headers
@@ -223,7 +231,7 @@ func setupRequestHijacking(page *rod.Page, config *HijackConfig) {
 						})
 					}
 					if config.Debug {
-						log.Printf("[DEBUG] Adding custom headers: %+v", config.CustomHeaders)
+						log.Printf("\033[35mAdding custom headers:\033[0m %+v", config.CustomHeaders)
 					}
 					ctx.ContinueRequest(&proto.FetchContinueRequest{
 						Headers: headers,
@@ -238,7 +246,7 @@ func setupRequestHijacking(page *rod.Page, config *HijackConfig) {
 			if len(config.DomainWhitelist) > 0 {
 				if isDomainWhitelisted(requestURL, config.DomainWhitelist) {
 					if config.Debug {
-						log.Printf("[DEBUG] Allowed: %s", requestURL)
+						log.Printf("\033[32mAllowed:\033[0m %s", requestURL)
 					}
 					// Apply custom headers if any
 					if len(config.CustomHeaders) > 0 {
@@ -267,7 +275,7 @@ func setupRequestHijacking(page *rod.Page, config *HijackConfig) {
 					}
 				} else {
 					if config.Debug {
-						log.Printf("[DEBUG] Blocked: %s", requestURL)
+						log.Printf("\033[31mBlocked:\033[0m %s", requestURL)
 					}
 					ctx.Response.Fail(proto.NetworkErrorReasonBlockedByClient)
 				}
