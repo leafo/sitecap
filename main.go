@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -182,6 +183,13 @@ type HijackConfig struct {
 func setupRequestHijacking(page *rod.Page, config *HijackConfig) {
 	// Set up network event logging for responses when debug is enabled
 	if config.Debug {
+		// Track request URLs by ID for failure logging
+		var requestURLs sync.Map
+
+		go page.EachEvent(func(e *proto.NetworkRequestWillBeSent) {
+			requestURLs.Store(string(e.RequestID), e.Request.URL)
+		})()
+
 		go page.EachEvent(func(e *proto.NetworkResponseReceived) {
 			response := e.Response
 			statusColor := "\033[32m" // Green for 2xx
@@ -192,6 +200,18 @@ func setupRequestHijacking(page *rod.Page, config *HijackConfig) {
 			}
 			log.Printf("\033[36mResponse:\033[0m %s - Status: %s%d\033[0m - Size: %d bytes",
 				response.URL, statusColor, response.Status, int64(response.EncodedDataLength))
+		})()
+
+		// Log network loading failures (invalid hosts, connection errors, etc.)
+		go page.EachEvent(func(e *proto.NetworkLoadingFailed) {
+			url := "unknown URL"
+			if val, exists := requestURLs.Load(string(e.RequestID)); exists {
+				if urlStr, ok := val.(string); ok && urlStr != "" {
+					url = urlStr
+				}
+			}
+			log.Printf("\033[31mNetwork Error:\033[0m %s - %s", url, e.ErrorText)
+			requestURLs.Delete(string(e.RequestID)) // Clean up
 		})()
 	}
 
@@ -232,7 +252,8 @@ func setupRequestHijacking(page *rod.Page, config *HijackConfig) {
 						})
 					}
 					if config.Debug {
-						log.Printf("\033[35mAdding custom headers:\033[0m %+v", config.CustomHeaders)
+						headersJSON, _ := json.Marshal(config.CustomHeaders)
+						log.Printf("\033[35mAdding custom headers:\033[0m %s", headersJSON)
 					}
 					ctx.ContinueRequest(&proto.FetchContinueRequest{
 						Headers: headers,
