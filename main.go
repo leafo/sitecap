@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,49 +28,8 @@ type RequestConfig struct {
 	Debug           bool
 }
 
-type Metrics struct {
-	TotalRequests   atomic.Int64  `metric:"sitecap_requests_total"`
-	SuccessRequests atomic.Int64  `metric:"sitecap_requests_success_total"`
-	FailedRequests  atomic.Int64  `metric:"sitecap_requests_failed_total"`
-	TotalDuration   atomic.Uint64 `metric:"sitecap_duration_seconds_total"`
-}
-
-var metrics Metrics
 var globalDebug bool
 var globalCustomHeaders map[string]string
-
-func (m *Metrics) String() string {
-	var sb strings.Builder
-
-	v := reflect.ValueOf(m).Elem()
-	t := v.Type()
-
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Field(i)
-		fieldType := t.Field(i)
-
-		metricName := fieldType.Tag.Get("metric")
-		if metricName == "" {
-			continue
-		}
-
-		var value string
-		switch field.Type().String() {
-		case "atomic.Int64":
-			atomicInt := field.Interface().(atomic.Int64)
-			value = strconv.FormatInt(atomicInt.Load(), 10)
-		case "atomic.Uint64":
-			atomicUint := field.Interface().(atomic.Uint64)
-			nanoseconds := atomicUint.Load()
-			seconds := float64(nanoseconds) / 1e9
-			value = strconv.FormatFloat(seconds, 'f', 6, 64)
-		}
-
-		sb.WriteString(metricName + " " + value + "\n")
-	}
-
-	return sb.String()
-}
 
 type responseWriter struct {
 	http.ResponseWriter
@@ -119,11 +77,6 @@ func loggingMiddleware(next http.Handler) http.Handler {
 		log.Printf("%s - - [%s] \"%s %s %s\" %d %d \"%s\" \"%s\"",
 			remoteAddr, timestamp, method, uri, proto, rw.status, rw.size, referer, userAgent)
 	})
-}
-
-func (m *Metrics) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprint(w, m.String())
 }
 
 func parseCustomHeaders(headersJSON string) (map[string]string, error) {
@@ -333,45 +286,9 @@ func setupRequestHijacking(page *rod.Page, config *HijackConfig) {
 	}
 }
 
-func takeScreenshotFromHTML(htmlContent string, config *RequestConfig) ([]byte, error) {
+func setupBrowserPage(url, htmlContent string, config *RequestConfig) (*rod.Page, func(), error) {
 	browser := rod.New().MustConnect()
-	defer browser.MustClose()
-
-	page := browser.MustPage()
-
-	// Set up request hijacking for debugging, domain filtering, or custom headers
-	hijackConfig := &HijackConfig{
-		MainURL:            "",
-		DomainWhitelist:    config.DomainWhitelist,
-		CustomHeaders:      config.CustomHeaders,
-		Debug:              config.Debug,
-		PermitFirstRequest: false,
-	}
-	setupRequestHijacking(page, hijackConfig)
-
-	// Set timeout if specified
-	if config.TimeoutSeconds > 0 {
-		page = page.Timeout(time.Duration(config.TimeoutSeconds) * time.Second)
-	}
-
-	// Set viewport if dimensions are specified
-	if config.ViewportWidth > 0 && config.ViewportHeight > 0 {
-		page.MustSetViewport(config.ViewportWidth, config.ViewportHeight, 1.0, false)
-	}
-
-	// Set HTML content directly
-	page.MustSetDocumentContent(htmlContent)
-	page.MustWaitLoad()
-
-	return page.Screenshot(false, &proto.PageCaptureScreenshot{
-		Format:      proto.PageCaptureScreenshotFormatPng,
-		FromSurface: true,
-	})
-}
-
-func takeScreenshot(url string, config *RequestConfig) ([]byte, error) {
-	browser := rod.New().MustConnect()
-	defer browser.MustClose()
+	cleanup := func() { browser.MustClose() }
 
 	page := browser.MustPage()
 
@@ -381,7 +298,7 @@ func takeScreenshot(url string, config *RequestConfig) ([]byte, error) {
 		DomainWhitelist:    config.DomainWhitelist,
 		CustomHeaders:      config.CustomHeaders,
 		Debug:              config.Debug,
-		PermitFirstRequest: true,
+		PermitFirstRequest: url != "",
 	}
 	setupRequestHijacking(page, hijackConfig)
 
@@ -390,8 +307,12 @@ func takeScreenshot(url string, config *RequestConfig) ([]byte, error) {
 		page = page.Timeout(time.Duration(config.TimeoutSeconds) * time.Second)
 	}
 
-	// Navigate to URL
-	page.MustNavigate(url)
+	// Load content (URL or HTML)
+	if htmlContent != "" {
+		page.MustSetDocumentContent(htmlContent)
+	} else {
+		page.MustNavigate(url)
+	}
 
 	// Set viewport if dimensions are specified
 	if config.ViewportWidth > 0 && config.ViewportHeight > 0 {
@@ -399,6 +320,48 @@ func takeScreenshot(url string, config *RequestConfig) ([]byte, error) {
 	}
 
 	page.MustWaitLoad()
+	return page, cleanup, nil
+}
+
+func takeHTMLContent(url string, config *RequestConfig) (string, error) {
+	page, cleanup, err := setupBrowserPage(url, "", config)
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+
+	return page.MustHTML(), nil
+}
+
+func takeHTMLContentFromHTML(htmlContent string, config *RequestConfig) (string, error) {
+	page, cleanup, err := setupBrowserPage("", htmlContent, config)
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+
+	return page.MustHTML(), nil
+}
+
+func takeScreenshotFromHTML(htmlContent string, config *RequestConfig) ([]byte, error) {
+	page, cleanup, err := setupBrowserPage("", htmlContent, config)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	return page.Screenshot(false, &proto.PageCaptureScreenshot{
+		Format:      proto.PageCaptureScreenshotFormatPng,
+		FromSurface: true,
+	})
+}
+
+func takeScreenshot(url string, config *RequestConfig) ([]byte, error) {
+	page, cleanup, err := setupBrowserPage(url, "", config)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
 
 	return page.Screenshot(false, &proto.PageCaptureScreenshot{
 		Format:      proto.PageCaptureScreenshotFormatPng,
@@ -456,6 +419,50 @@ func processScreenshot(url string, config *RequestConfig) ([]byte, string, error
 	return img, "image/png", nil
 }
 
+func handleHTML(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/html" {
+		http.NotFound(w, r)
+		return
+	}
+
+	start := time.Now()
+
+	metrics.TotalRequests.Add(1)
+
+	url := r.URL.Query().Get("url")
+	if url == "" {
+		metrics.FailedRequests.Add(1)
+		http.Error(w, "Missing url parameter", http.StatusBadRequest)
+		return
+	}
+
+	viewportParam := r.URL.Query().Get("viewport")
+	timeoutParam := r.URL.Query().Get("timeout")
+	domainsParam := r.URL.Query().Get("domains")
+
+	config, err := parseRequestConfig(viewportParam, "", timeoutParam, domainsParam)
+	if err != nil {
+		metrics.FailedRequests.Add(1)
+		http.Error(w, fmt.Sprintf("Invalid parameters: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	html, err := takeHTMLContent(url, config)
+	duration := time.Since(start)
+
+	metrics.TotalDuration.Add(uint64(duration.Nanoseconds()))
+	if err != nil {
+		metrics.FailedRequests.Add(1)
+		http.Error(w, fmt.Sprintf("Error processing HTML: %v", err), http.StatusInternalServerError)
+		return
+	} else {
+		metrics.SuccessRequests.Add(1)
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Write([]byte(html))
+}
+
 func handleScreenshot(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -503,6 +510,7 @@ func handleScreenshot(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	httpMode := flag.Bool("http", false, "Start HTTP server mode")
+	htmlMode := flag.Bool("html", false, "Output HTML content instead of screenshot")
 	listen := flag.String("listen", "localhost:8080", "Address to listen on for HTTP server")
 	viewport := flag.String("viewport", "", "Viewport dimensions for the browser (e.g. 1920x1080)")
 	resize := flag.String("resize", "", "Resize parameters (e.g. 100x200, 100x200!, 100x200#)")
@@ -526,12 +534,14 @@ func main() {
 	if *httpMode {
 		mux := http.NewServeMux()
 		mux.HandleFunc("/", handleScreenshot)
+		mux.HandleFunc("/html", handleHTML)
 		mux.Handle("/metrics", &metrics)
 
 		handler := loggingMiddleware(mux)
 
 		fmt.Printf("Starting HTTP server on %s\n", *listen)
-		fmt.Printf("Usage: http://%s/?url=https://leafo.net&viewport=1920x1080&resize=100x200&timeout=30&domains=example.com,*.cdn.com\n", *listen)
+		fmt.Printf("Screenshot: http://%s/?url=https://leafo.net&viewport=1920x1080&resize=100x200&timeout=30&domains=example.com,*.cdn.com\n", *listen)
+		fmt.Printf("HTML: http://%s/html?url=https://leafo.net&viewport=1920x1080&timeout=30&domains=example.com,*.cdn.com\n", *listen)
 		if len(globalCustomHeaders) > 0 {
 			fmt.Printf("Custom headers will be applied to all requests: %+v\n", globalCustomHeaders)
 		}
@@ -543,12 +553,17 @@ func main() {
 	}
 
 	if len(flag.Args()) != 1 {
-		fmt.Fprintf(os.Stderr, "Usage: %s [--viewport WxH] [--resize WxH] [--timeout N] [--domains list] [--headers JSON] [--debug] [--http] <URL>\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [--viewport WxH] [--resize WxH] [--timeout N] [--domains list] [--headers JSON] [--debug] [--http] [--html] <URL>\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "       %s [options] - < input.html   (use '-' to read HTML from stdin)\n", os.Args[0])
 		os.Exit(1)
 	}
 
-	config, err := parseRequestConfig(*viewport, *resize, strconv.Itoa(*timeout), *domains)
+	resizeParam := *resize
+	if *htmlMode {
+		resizeParam = ""
+	}
+
+	config, err := parseRequestConfig(*viewport, resizeParam, strconv.Itoa(*timeout), *domains)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing parameters: %v\n", err)
 		os.Exit(1)
@@ -571,9 +586,42 @@ func main() {
 			os.Exit(1)
 		}
 
-		img, _, err := processScreenshotFromHTML(htmlContent, config)
+		if *htmlMode {
+			html, err := takeHTMLContentFromHTML(htmlContent, config)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error processing HTML content: %v\n", err)
+				os.Exit(1)
+			}
+
+			fmt.Print(html)
+		} else {
+			img, _, err := processScreenshotFromHTML(htmlContent, config)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error processing HTML screenshot: %v\n", err)
+				os.Exit(1)
+			}
+
+			_, err = os.Stdout.Write(img)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error writing to stdout: %v\n", err)
+				os.Exit(1)
+			}
+		}
+		return
+	}
+
+	if *htmlMode {
+		html, err := takeHTMLContent(url, config)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error processing HTML screenshot: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error processing HTML content: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Print(html)
+	} else {
+		img, _, err := processScreenshot(url, config)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error processing screenshot: %v\n", err)
 			os.Exit(1)
 		}
 
@@ -582,18 +630,5 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error writing to stdout: %v\n", err)
 			os.Exit(1)
 		}
-		return
-	}
-
-	img, _, err := processScreenshot(url, config)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error processing screenshot: %v\n", err)
-		os.Exit(1)
-	}
-
-	_, err = os.Stdout.Write(img)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing to stdout: %v\n", err)
-		os.Exit(1)
 	}
 }
