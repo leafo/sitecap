@@ -15,6 +15,7 @@ go install github.com/leafo/sitecap@latest
 ```bash
 sitecap [--viewport WxH] [--resize WxH] [--timeout N] [--domains list] [--debug] <URL> > screenshot.png
 sitecap [options] - < input.html > screenshot.png
+sitecap [options] --html <URL> > page.html
 ```
 
 Examples:
@@ -57,6 +58,12 @@ echo "<html><body><h1>Hello World</h1></body></html>" | sitecap --viewport 800x6
 
 # Process HTML file with domain filtering
 sitecap --viewport 1200x800 --resize 600x400 --domains "example.com,cdn.example.com" - < my-page.html > processed.png
+
+# Get HTML content from a live website
+sitecap --html https://example.com > example.html
+
+# Get HTML content with viewport and domain filtering
+sitecap --html --viewport 1920x1080 --domains "example.com,*.cdn.com" https://example.com > filtered.html
 ```
 
 ### HTML from Stdin
@@ -79,6 +86,23 @@ sitecap --domains "cdn.example.com,fonts.googleapis.com" --debug - < my-page.htm
 - Test HTML layouts without deploying to a web server
 - Process HTML templates with custom data
 - Create images from programmatically generated HTML
+
+### HTML Output Mode
+
+The `--html` flag captures the rendered HTML content from a URL instead of
+taking a screenshot. This can be useful to access the HTML content of a website
+that primarily renders through JavaScript.
+
+```bash
+# Get final HTML after JavaScript execution
+sitecap --html https://spa-app.com > rendered.html
+
+# Get HTML with custom viewport
+sitecap --html --viewport 375x667 https://responsive-site.com > mobile-html.html
+
+# Get HTML with domain filtering
+sitecap --html --domains "site.com,*.cdn.com" https://site.com > clean.html
+```
 
 ### HTTP Server Mode
 
@@ -111,6 +135,12 @@ curl "http://localhost:8080/?url=https://example.com&domains=example.com,*.cloud
 
 # Full example with all parameters
 curl "http://localhost:8080/?url=https://example.com&viewport=1920x1080&resize=800x600&timeout=15&domains=example.com,cdn.example.com" > full.png
+
+# Get HTML content instead of screenshot
+curl "http://localhost:8080/html?url=https://example.com" > example.html
+
+# Get HTML with viewport and domain filtering
+curl "http://localhost:8080/html?url=https://example.com&viewport=1920x1080&domains=example.com,*.cdn.com" > filtered.html
 ```
 
 **Debug Mode**: Start the server with `--debug` flag to see all network requests in the server logs:
