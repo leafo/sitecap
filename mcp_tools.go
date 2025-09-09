@@ -267,7 +267,7 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 
 	if err != nil {
 		requestManager.StoreRequest(entry)
-		configManager.AddRequestToHistory(contextName, entry.ID)
+		config.AddRequestToHistory(entry.ID)
 
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -280,12 +280,12 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 	// Handle cookie updates if requested
 	if args.UpdateCookies && len(response.Cookies) > 0 {
 		cookieParams := convertRodCookiesToParams(response.Cookies)
-		configManager.UpdateCookies(contextName, cookieParams, true)
+		config.UpdateCookies(cookieParams, true)
 	}
 
 	// Store request and update history
 	requestManager.StoreRequest(entry)
-	configManager.AddRequestToHistory(contextName, entry.ID)
+	config.AddRequestToHistory(entry.ID)
 
 	result := ScreenshotResult{
 		Success:     true,
@@ -354,7 +354,7 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 
 	if err != nil {
 		requestManager.StoreRequest(entry)
-		configManager.AddRequestToHistory(contextName, entry.ID)
+		config.AddRequestToHistory(entry.ID)
 
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -367,12 +367,12 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 	// Handle cookie updates if requested (though less relevant for HTML content)
 	if args.UpdateCookies && len(response.Cookies) > 0 {
 		cookieParams := convertRodCookiesToParams(response.Cookies)
-		configManager.UpdateCookies(contextName, cookieParams, true)
+		config.UpdateCookies(cookieParams, true)
 	}
 
 	// Store request and update history
 	requestManager.StoreRequest(entry)
-	configManager.AddRequestToHistory(contextName, entry.ID)
+	config.AddRequestToHistory(entry.ID)
 
 	result := ScreenshotResult{
 		Success:     true,
@@ -438,7 +438,7 @@ func handleMCPGetHTML(ctx context.Context, request *mcp.CallToolRequest, args Ge
 
 	if err != nil {
 		requestManager.StoreRequest(entry)
-		configManager.AddRequestToHistory(contextName, entry.ID)
+		config.AddRequestToHistory(entry.ID)
 
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -451,12 +451,12 @@ func handleMCPGetHTML(ctx context.Context, request *mcp.CallToolRequest, args Ge
 	// Handle cookie updates if requested
 	if args.UpdateCookies && len(response.Cookies) > 0 {
 		cookieParams := convertRodCookiesToParams(response.Cookies)
-		configManager.UpdateCookies(contextName, cookieParams, true)
+		config.UpdateCookies(cookieParams, true)
 	}
 
 	// Store request and update history
 	requestManager.StoreRequest(entry)
-	configManager.AddRequestToHistory(contextName, entry.ID)
+	config.AddRequestToHistory(entry.ID)
 
 	var html string
 	if response.HTML != nil {

@@ -19,25 +19,85 @@ type BrowserContextConfig struct {
 	RequestHistory  []string // Request IDs in chronological order
 	CreatedAt       time.Time
 	LastUsed        time.Time
+	mutex           sync.RWMutex
 }
 
 // ViewportConfig represents viewport dimensions
 type ViewportConfig struct {
-	Width  int
-	Height int
+	Width  int `json:"width"`
+	Height int `json:"height"`
 }
 
-// ContextConfigManager manages browser context configurations
+// UpdateCookies updates the cookies for this context
+func (c *BrowserContextConfig) UpdateCookies(newCookies []*proto.NetworkCookieParam, merge bool) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	if merge && len(c.Cookies) > 0 {
+		// Merge cookies - new cookies override existing ones with same name/domain
+		cookieMap := make(map[string]*proto.NetworkCookieParam)
+
+		// Add existing cookies
+		for _, cookie := range c.Cookies {
+			key := cookie.Name + "|" + cookie.Domain
+			cookieMap[key] = cookie
+		}
+
+		// Add/override with new cookies
+		for _, cookie := range newCookies {
+			key := cookie.Name + "|" + cookie.Domain
+			cookieMap[key] = cookie
+		}
+
+		// Convert back to slice
+		c.Cookies = make([]*proto.NetworkCookieParam, 0, len(cookieMap))
+		for _, cookie := range cookieMap {
+			c.Cookies = append(c.Cookies, cookie)
+		}
+	} else {
+		// Replace all cookies
+		c.Cookies = newCookies
+	}
+
+	c.LastUsed = time.Now()
+}
+
+// AddRequestToHistory adds a request ID to this context's history
+func (c *BrowserContextConfig) AddRequestToHistory(requestID string) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	c.RequestHistory = append(c.RequestHistory, requestID)
+	c.LastRequestID = requestID
+	c.LastUsed = time.Now()
+}
+
+// ContextConfigManager manages named browser contexts that hold settings about
+// rendering and persistent data like cookies, headers, etc.
 type ContextConfigManager struct {
 	contexts map[string]*BrowserContextConfig
 	mutex    sync.RWMutex
 }
 
-// NewContextConfigManager creates a new context configuration manager
 func NewContextConfigManager() *ContextConfigManager {
-	return &ContextConfigManager{
+	context_manager := &ContextConfigManager{
 		contexts: make(map[string]*BrowserContextConfig),
 	}
+
+	// create a "default" context
+	// TODO this should pull defaults from command line flags
+	defaultConfig := &BrowserContextConfig{
+		Name:            "default",
+		DefaultViewport: ViewportConfig{Width: 1920, Height: 1080},
+		DefaultTimeout:  30,
+		DomainWhitelist: []string{},
+		Cookies:         []*proto.NetworkCookieParam{},
+		Headers:         map[string]string{},
+		RequestHistory:  []string{},
+	}
+	context_manager.CreateOrUpdateContext("default", defaultConfig)
+
+	return context_manager
 }
 
 // CreateOrUpdateContext creates or updates a browser context configuration
@@ -71,14 +131,6 @@ func (m *ContextConfigManager) GetContext(name string) (*BrowserContextConfig, b
 	}
 
 	context, exists := m.contexts[name]
-	if exists {
-		// Update last used time
-		go func() {
-			m.mutex.Lock()
-			context.LastUsed = time.Now()
-			m.mutex.Unlock()
-		}()
-	}
 	return context, exists
 }
 
@@ -112,72 +164,4 @@ func (m *ContextConfigManager) DeleteContext(name string) bool {
 		return true
 	}
 	return false
-}
-
-// AddRequestToHistory adds a request ID to the context's history
-func (m *ContextConfigManager) AddRequestToHistory(contextName string, requestID string) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
-	if contextName == "" {
-		contextName = "default"
-	}
-
-	if context, exists := m.contexts[contextName]; exists {
-		context.RequestHistory = append(context.RequestHistory, requestID)
-		context.LastRequestID = requestID
-		context.LastUsed = time.Now()
-	}
-}
-
-// UpdateCookies updates the cookies for a context (from set-cookie headers)
-func (m *ContextConfigManager) UpdateCookies(contextName string, newCookies []*proto.NetworkCookieParam, merge bool) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
-	if contextName == "" {
-		contextName = "default"
-	}
-
-	context, exists := m.contexts[contextName]
-	if !exists {
-		// Create default context if it doesn't exist
-		context = &BrowserContextConfig{
-			Name:            contextName,
-			DefaultViewport: ViewportConfig{Width: 1920, Height: 1080},
-			DefaultTimeout:  30,
-			Headers:         make(map[string]string),
-			RequestHistory:  make([]string, 0),
-			CreatedAt:       time.Now(),
-		}
-		m.contexts[contextName] = context
-	}
-
-	if merge && len(context.Cookies) > 0 {
-		// Merge cookies - new cookies override existing ones with same name/domain
-		cookieMap := make(map[string]*proto.NetworkCookieParam)
-
-		// Add existing cookies
-		for _, cookie := range context.Cookies {
-			key := cookie.Name + "|" + cookie.Domain
-			cookieMap[key] = cookie
-		}
-
-		// Add/override with new cookies
-		for _, cookie := range newCookies {
-			key := cookie.Name + "|" + cookie.Domain
-			cookieMap[key] = cookie
-		}
-
-		// Convert back to slice
-		context.Cookies = make([]*proto.NetworkCookieParam, 0, len(cookieMap))
-		for _, cookie := range cookieMap {
-			context.Cookies = append(context.Cookies, cookie)
-		}
-	} else {
-		// Replace all cookies
-		context.Cookies = newCookies
-	}
-
-	context.LastUsed = time.Now()
 }

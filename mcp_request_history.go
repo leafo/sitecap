@@ -13,7 +13,7 @@ type RequestHistoryEntry struct {
 	URL         string           `json:"url"`
 	InputHTML   string           `json:"input_html,omitempty"` // HTML content for HTML-based requests
 	Timestamp   time.Time        `json:"timestamp"`
-	Duration    time.Duration    `json:"duration"`
+	Duration    time.Duration    `json:"duration_ms"`
 	RequestType string           `json:"request_type"` // screenshot, get_html, screenshot_html
 	Config      *RequestConfig   `json:"config"`
 	Response    *BrowserResponse `json:"response"`

@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 
-	"github.com/go-rod/rod/lib/proto"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -19,31 +18,15 @@ var (
 func StartMCPServer() {
 	log.Println("Starting Sitecap MCP server...")
 
-	// Initialize managers
 	configManager = NewContextConfigManager()
 	requestManager = NewRequestHistoryManager()
 
-	// Create default empty browsing context
-	defaultConfig := &BrowserContextConfig{
-		Name:            "default",
-		DefaultViewport: ViewportConfig{Width: 1920, Height: 1080},
-		DefaultTimeout:  30,
-		DomainWhitelist: []string{},
-		Cookies:         []*proto.NetworkCookieParam{},
-		Headers:         map[string]string{},
-		RequestHistory:  []string{},
-	}
-	configManager.CreateOrUpdateContext("default", defaultConfig)
-	log.Println("Created default empty browsing context")
-
-	// Create the MCP server
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "sitecap",
 		Title:   "Sitecap Website Screenshot Tool",
 		Version: "1.0.0",
 	}, nil)
 
-	// Register all tools using the generic AddTool function
 	registerTools(server)
 
 	// Run the server with stdio transport
