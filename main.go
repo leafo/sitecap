@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -28,6 +29,7 @@ type RequestConfig struct {
 	CaptureCookies    bool // Enable cookie capture after navigation
 	CaptureScreenshot bool // Enable screenshot capture
 	CaptureHTML       bool // Enable HTML content capture
+	JSONOutput        bool // Enable JSON output mode
 }
 
 type BrowserResponse struct {
@@ -37,8 +39,30 @@ type BrowserResponse struct {
 	ContentType string                 // Content type of screenshot (e.g., "image/png", "image/jpeg")
 }
 
+type JSONOutput struct {
+	HTML        *string                `json:"html,omitempty"`
+	Cookies     []*proto.NetworkCookie `json:"cookies,omitempty"`
+	Screenshot  *string                `json:"screenshot,omitempty"` // base64 encoded screenshot
+	ContentType string                 `json:"content_type,omitempty"`
+}
+
 var globalDebug bool
 var globalCustomHeaders map[string]string
+
+func convertToJSONOutput(response *BrowserResponse) *JSONOutput {
+	output := &JSONOutput{
+		HTML:        response.HTML,
+		Cookies:     response.Cookies,
+		ContentType: response.ContentType,
+	}
+
+	if response.Screenshot != nil {
+		encoded := base64.StdEncoding.EncodeToString(response.Screenshot)
+		output.Screenshot = &encoded
+	}
+
+	return output
+}
 
 func parseCustomHeaders(headersJSON string) (map[string]string, error) {
 	if headersJSON == "" {
@@ -363,6 +387,7 @@ func main() {
 	httpMode := flag.Bool("http", false, "Start HTTP server mode")
 	mcpMode := flag.Bool("mcp", false, "Start MCP (Model Context Protocol) server mode")
 	htmlMode := flag.Bool("html", false, "Output HTML content instead of screenshot")
+	jsonMode := flag.Bool("json", false, "Output JSON with HTML, cookies, and other request information")
 	listen := flag.String("listen", "localhost:8080", "Address to listen on for HTTP server")
 	viewport := flag.String("viewport", "", "Viewport dimensions for the browser (e.g. 1920x1080)")
 	resize := flag.String("resize", "", "Resize parameters (e.g. 100x200, 100x200!, 100x200#)")
@@ -394,14 +419,14 @@ func main() {
 	}
 
 	if len(flag.Args()) != 1 {
-		fmt.Fprintf(os.Stderr, "Usage: %s [--viewport WxH] [--resize WxH] [--timeout N] [--domains list] [--headers JSON] [--debug] [--http] [--mcp] [--html] <URL>\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [--viewport WxH] [--resize WxH] [--timeout N] [--domains list] [--headers JSON] [--debug] [--http] [--mcp] [--html] [--json] <URL>\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "       %s [options] - < input.html   (use '-' to read HTML from stdin)\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "       %s --mcp   (start MCP server for Model Context Protocol)\n", os.Args[0])
 		os.Exit(1)
 	}
 
 	resizeParam := *resize
-	if *htmlMode {
+	if *htmlMode || *jsonMode {
 		resizeParam = ""
 	}
 
@@ -412,6 +437,7 @@ func main() {
 	}
 
 	url := flag.Args()[0]
+	var htmlContent string
 
 	// Check if URL is "-" to read HTML from stdin
 	if url == "-" {
@@ -422,43 +448,34 @@ func main() {
 			os.Exit(1)
 		}
 
-		htmlContent := string(htmlBytes)
+		htmlContent = string(htmlBytes)
 		if htmlContent == "" {
 			fmt.Fprintf(os.Stderr, "No HTML content provided via stdin\n")
 			os.Exit(1)
 		}
-
-		if *htmlMode {
-			config.CaptureHTML = true
-			response, err := executeBrowserRequest("", htmlContent, config)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error processing HTML content: %v\n", err)
-				os.Exit(1)
-			}
-
-			if response.HTML != nil {
-				fmt.Print(*response.HTML)
-			}
-		} else {
-			config.CaptureScreenshot = true
-			response, err := executeBrowserRequest("", htmlContent, config)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error processing HTML screenshot: %v\n", err)
-				os.Exit(1)
-			}
-
-			_, err = os.Stdout.Write(response.Screenshot)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error writing to stdout: %v\n", err)
-				os.Exit(1)
-			}
-		}
-		return
+		url = "" // Clear URL when using stdin
 	}
 
-	if *htmlMode {
+	// Process request based on mode
+	if *jsonMode {
 		config.CaptureHTML = true
-		response, err := executeBrowserRequest(url, "", config)
+		config.CaptureCookies = true
+		response, err := executeBrowserRequest(url, htmlContent, config)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error processing request: %v\n", err)
+			os.Exit(1)
+		}
+
+		jsonOutput := convertToJSONOutput(response)
+		jsonBytes, err := json.MarshalIndent(jsonOutput, "", "  ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error marshaling JSON: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Print(string(jsonBytes))
+	} else if *htmlMode {
+		config.CaptureHTML = true
+		response, err := executeBrowserRequest(url, htmlContent, config)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error processing HTML content: %v\n", err)
 			os.Exit(1)
@@ -469,7 +486,7 @@ func main() {
 		}
 	} else {
 		config.CaptureScreenshot = true
-		response, err := executeBrowserRequest(url, "", config)
+		response, err := executeBrowserRequest(url, htmlContent, config)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error processing screenshot: %v\n", err)
 			os.Exit(1)
