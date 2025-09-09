@@ -25,13 +25,13 @@ type CookieInput struct {
 }
 
 type ConfigureContextArgs struct {
-	ContextName       string            `json:"context_name,omitempty" jsonschema:"name of the browser context (default: 'default')"`
-	Viewport          string            `json:"viewport,omitempty" jsonschema:"viewport dimensions like '1920x1080' (default: '1920x1080')"`
-	Timeout           int               `json:"timeout,omitempty" jsonschema:"timeout in seconds for page loads (default: 30)"`
-	Domains           string            `json:"domains,omitempty" jsonschema:"comma-separated list of allowed domains for request filtering"`
-	Cookies           []CookieInput     `json:"cookies,omitempty" jsonschema:"array of cookie objects to set in the browser context"`
-	Headers           map[string]string `json:"headers,omitempty" jsonschema:"default HTTP headers to send with all requests"`
-	UserAgent         string            `json:"user_agent,omitempty" jsonschema:"custom user agent string to use"`
+	ContextName string            `json:"context_name,omitempty" jsonschema:"name of the browser context (default: 'default')"`
+	Viewport    string            `json:"viewport,omitempty" jsonschema:"viewport dimensions like '1920x1080' (default: '1920x1080')"`
+	Timeout     int               `json:"timeout,omitempty" jsonschema:"timeout in seconds for page loads (default: 30)"`
+	Domains     string            `json:"domains,omitempty" jsonschema:"comma-separated list of allowed domains for request filtering"`
+	Cookies     []CookieInput     `json:"cookies,omitempty" jsonschema:"array of cookie objects to set in the browser context"`
+	Headers     map[string]string `json:"headers,omitempty" jsonschema:"default HTTP headers to send with all requests"`
+	UserAgent   string            `json:"user_agent,omitempty" jsonschema:"custom user agent string to use"`
 }
 
 type ScreenshotArgs struct {
@@ -185,11 +185,11 @@ func handleConfigureContext(ctx context.Context, request *mcp.CallToolRequest, a
 			Width:  viewportWidth,
 			Height: viewportHeight,
 		},
-		DefaultTimeout:    args.Timeout,
-		DomainWhitelist:   domainWhitelist,
-		Cookies:           cookies,
-		Headers:           args.Headers,
-		UserAgent:         args.UserAgent,
+		DefaultTimeout:  args.Timeout,
+		DomainWhitelist: domainWhitelist,
+		Cookies:         cookies,
+		Headers:         args.Headers,
+		UserAgent:       args.UserAgent,
 	}
 
 	// Set default headers if none provided
@@ -204,11 +204,11 @@ func handleConfigureContext(ctx context.Context, request *mcp.CallToolRequest, a
 		ContextName: args.ContextName,
 		Message:     "Context configured successfully",
 		Config: map[string]interface{}{
-			"viewport":           args.Viewport,
-			"timeout":            args.Timeout,
-			"domains":            len(domainWhitelist),
-			"cookies":            len(cookies),
-			"headers":            len(config.Headers),
+			"viewport": args.Viewport,
+			"timeout":  args.Timeout,
+			"domains":  len(domainWhitelist),
+			"cookies":  len(cookies),
+			"headers":  len(config.Headers),
 		},
 	}
 

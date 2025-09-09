@@ -9,17 +9,17 @@ import (
 
 // BrowserContextConfig stores browser configuration for a named context
 type BrowserContextConfig struct {
-	Name              string
-	DefaultViewport   ViewportConfig
-	DefaultTimeout    int
-	DomainWhitelist   []string
-	Cookies           []*proto.NetworkCookieParam
-	Headers           map[string]string
-	UserAgent         string
-	LastRequestID     string
-	RequestHistory    []string // Request IDs in chronological order
-	CreatedAt         time.Time
-	LastUsed          time.Time
+	Name            string
+	DefaultViewport ViewportConfig
+	DefaultTimeout  int
+	DomainWhitelist []string
+	Cookies         []*proto.NetworkCookieParam
+	Headers         map[string]string
+	UserAgent       string
+	LastRequestID   string
+	RequestHistory  []string // Request IDs in chronological order
+	CreatedAt       time.Time
+	LastUsed        time.Time
 }
 
 // ViewportConfig represents viewport dimensions
@@ -91,13 +91,13 @@ func (m *ContextConfigManager) ListContexts() map[string]interface{} {
 	result := make(map[string]interface{})
 	for name, context := range m.contexts {
 		result[name] = map[string]interface{}{
-			"created_at":         context.CreatedAt,
-			"last_used":          context.LastUsed,
-			"request_count":      len(context.RequestHistory),
-			"viewport":           context.DefaultViewport,
-			"timeout":            context.DefaultTimeout,
-			"cookies":            context.Cookies,
-			"headers":            context.Headers,
+			"created_at":    context.CreatedAt,
+			"last_used":     context.LastUsed,
+			"request_count": len(context.RequestHistory),
+			"viewport":      context.DefaultViewport,
+			"timeout":       context.DefaultTimeout,
+			"cookies":       context.Cookies,
+			"headers":       context.Headers,
 		}
 	}
 	return result
@@ -144,12 +144,12 @@ func (m *ContextConfigManager) UpdateCookies(contextName string, newCookies []*p
 	if !exists {
 		// Create default context if it doesn't exist
 		context = &BrowserContextConfig{
-			Name:              contextName,
-			DefaultViewport:   ViewportConfig{Width: 1920, Height: 1080},
-			DefaultTimeout:    30,
-			Headers:           make(map[string]string),
-			RequestHistory:    make([]string, 0),
-			CreatedAt:         time.Now(),
+			Name:            contextName,
+			DefaultViewport: ViewportConfig{Width: 1920, Height: 1080},
+			DefaultTimeout:  30,
+			Headers:         make(map[string]string),
+			RequestHistory:  make([]string, 0),
+			CreatedAt:       time.Now(),
 		}
 		m.contexts[contextName] = context
 	}

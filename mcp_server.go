@@ -25,14 +25,14 @@ func StartMCPServer() {
 
 	// Create default empty browsing context
 	defaultConfig := &BrowserContextConfig{
-		Name:              "default",
-		DefaultViewport:   ViewportConfig{Width: 1920, Height: 1080},
-		DefaultTimeout:    30,
-		DomainWhitelist:   []string{},
-		Cookies:           []*proto.NetworkCookieParam{},
-		Headers:           map[string]string{},
-		UserAgent:         "",
-		RequestHistory:    []string{},
+		Name:            "default",
+		DefaultViewport: ViewportConfig{Width: 1920, Height: 1080},
+		DefaultTimeout:  30,
+		DomainWhitelist: []string{},
+		Cookies:         []*proto.NetworkCookieParam{},
+		Headers:         map[string]string{},
+		UserAgent:       "",
+		RequestHistory:  []string{},
 	}
 	configManager.CreateOrUpdateContext("default", defaultConfig)
 	log.Println("Created default empty browsing context")
