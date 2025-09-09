@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -29,6 +30,15 @@ type CapturedNetworkRequest struct {
 	ErrorText       string            `json:"error_text,omitempty"`
 }
 
+type CapturedConsoleLog struct {
+	Level     string    `json:"level"`
+	Message   string    `json:"message"`
+	Timestamp time.Time `json:"timestamp"`
+	Source    string    `json:"source,omitempty"`
+	Line      int       `json:"line,omitempty"`
+	Column    int       `json:"column,omitempty"`
+}
+
 type RequestConfig struct {
 	ViewportWidth   int
 	ViewportHeight  int
@@ -42,7 +52,7 @@ type RequestConfig struct {
 	CaptureScreenshot bool // Enable screenshot capture
 	CaptureHTML       bool // Enable HTML content capture
 	CaptureNetwork    bool // Enable network request capture
-	JSONOutput        bool // Enable JSON output mode
+	CaptureLogs       bool // Enable console log capture
 }
 
 type BrowserResponse struct {
@@ -51,6 +61,7 @@ type BrowserResponse struct {
 	Screenshot      []byte                   // Screenshot image data (nil if not captured)
 	ContentType     string                   // Content type of screenshot (e.g., "image/png", "image/jpeg")
 	NetworkRequests []CapturedNetworkRequest // Captured network requests (nil if not captured)
+	ConsoleLogs     []CapturedConsoleLog     // Captured console logs (nil if not captured)
 }
 
 type JSONOutput struct {
@@ -59,6 +70,7 @@ type JSONOutput struct {
 	Screenshot      *string                  `json:"screenshot,omitempty"` // base64 encoded screenshot
 	ContentType     string                   `json:"content_type,omitempty"`
 	NetworkRequests []CapturedNetworkRequest `json:"network_requests,omitempty"`
+	ConsoleLogs     []CapturedConsoleLog     `json:"console_logs,omitempty"`
 }
 
 var globalDebug bool
@@ -70,6 +82,7 @@ func convertToJSONOutput(response *BrowserResponse) *JSONOutput {
 		Cookies:         response.Cookies,
 		ContentType:     response.ContentType,
 		NetworkRequests: response.NetworkRequests,
+		ConsoleLogs:     response.ConsoleLogs,
 	}
 
 	if response.Screenshot != nil {
@@ -133,15 +146,18 @@ type HijackConfig struct {
 	Debug              bool
 	PermitFirstRequest bool // Always permit the first request regardless of authorized domains
 	CaptureNetwork     bool // Enable network request capture
+	CaptureLogs        bool // Enable console log capture
 }
 
 type HijackResult struct {
 	NetworkRequests []CapturedNetworkRequest // Captured network requests during hijacking
+	ConsoleLogs     []CapturedConsoleLog     // Captured console logs during hijacking
 }
 
 func setupRequestHijacking(page *rod.Page, config *HijackConfig) *HijackResult {
 	result := &HijackResult{
 		NetworkRequests: make([]CapturedNetworkRequest, 0),
+		ConsoleLogs:     make([]CapturedConsoleLog, 0),
 	}
 
 	if config.Debug {
@@ -246,6 +262,125 @@ func setupRequestHijacking(page *rod.Page, config *HijackConfig) *HijackResult {
 					requestInfo.Delete(requestID)
 					requestTimes.Delete(requestID)
 				}
+			}
+		})()
+	}
+
+	if config.CaptureLogs {
+		var consoleLogsMutex sync.Mutex
+
+		// Capture console API calls (console.log, console.warn, console.error, etc.)
+		go page.EachEvent(func(e *proto.RuntimeConsoleAPICalled) {
+			message := ""
+			if len(e.Args) > 0 {
+				// Convert all arguments to strings and join them
+				args := make([]string, len(e.Args))
+				for i, arg := range e.Args {
+					if arg.Description != "" {
+						args[i] = arg.Description
+					} else {
+						// Try to extract value as string from JSON
+						valueBytes, err := json.Marshal(arg.Value)
+						if err == nil && len(valueBytes) > 0 {
+							valueStr := string(valueBytes)
+							// Remove quotes if it's a quoted string
+							if strings.HasPrefix(valueStr, "\"") && strings.HasSuffix(valueStr, "\"") {
+								valueStr = strings.Trim(valueStr, "\"")
+							}
+							args[i] = valueStr
+						} else {
+							args[i] = fmt.Sprintf("[%s]", arg.Type)
+						}
+					}
+				}
+				if len(args) == 1 {
+					message = args[0]
+				} else if len(args) > 1 {
+					// Join all arguments with spaces for console output
+					message = fmt.Sprintf("%s", args[0])
+					for _, arg := range args[1:] {
+						message += " " + arg
+					}
+				}
+			}
+
+			consoleLog := CapturedConsoleLog{
+				Level:     string(e.Type),
+				Message:   message,
+				Timestamp: time.Now(),
+			}
+
+			// Add stack trace info if available
+			if e.StackTrace != nil && len(e.StackTrace.CallFrames) > 0 {
+				frame := e.StackTrace.CallFrames[0]
+				consoleLog.Source = frame.URL
+				consoleLog.Line = frame.LineNumber
+				consoleLog.Column = frame.ColumnNumber
+			}
+
+			consoleLogsMutex.Lock()
+			result.ConsoleLogs = append(result.ConsoleLogs, consoleLog)
+			consoleLogsMutex.Unlock()
+		})()
+
+		// Capture uncaught JavaScript exceptions
+		go page.EachEvent(func(e *proto.RuntimeExceptionThrown) {
+			message := "JavaScript Exception"
+			source := ""
+			line := 0
+			column := 0
+
+			if e.ExceptionDetails != nil {
+				if e.ExceptionDetails.Text != "" {
+					message = e.ExceptionDetails.Text
+				}
+				if e.ExceptionDetails.URL != "" {
+					source = e.ExceptionDetails.URL
+				}
+				line = e.ExceptionDetails.LineNumber
+				column = e.ExceptionDetails.ColumnNumber
+
+				// Try to get exception message from the exception object
+				if e.ExceptionDetails.Exception != nil && e.ExceptionDetails.Exception.Description != "" {
+					message = e.ExceptionDetails.Exception.Description
+				}
+			}
+
+			consoleLog := CapturedConsoleLog{
+				Level:     "error",
+				Message:   message,
+				Timestamp: time.Now(),
+				Source:    source,
+				Line:      line,
+				Column:    column,
+			}
+
+			consoleLogsMutex.Lock()
+			result.ConsoleLogs = append(result.ConsoleLogs, consoleLog)
+			consoleLogsMutex.Unlock()
+		})()
+
+		// Capture general log entries
+		go page.EachEvent(func(e *proto.LogEntryAdded) {
+			if e.Entry != nil {
+				message := e.Entry.Text
+				source := e.Entry.URL
+				line := 0
+				if e.Entry.LineNumber != nil {
+					line = *e.Entry.LineNumber
+				}
+
+				consoleLog := CapturedConsoleLog{
+					Level:     string(e.Entry.Level),
+					Message:   message,
+					Timestamp: time.Now(),
+					Source:    source,
+					Line:      line,
+				}
+
+				consoleLogsMutex.Lock()
+				result.ConsoleLogs = append(result.ConsoleLogs, consoleLog)
+				consoleLogsMutex.Unlock()
 			}
 		})()
 	}
@@ -395,6 +530,7 @@ func executeBrowserRequest(url, htmlContent string, config *RequestConfig) (*Bro
 		Debug:              config.Debug,
 		PermitFirstRequest: url != "",
 		CaptureNetwork:     config.CaptureNetwork,
+		CaptureLogs:        config.CaptureLogs,
 	}
 	hijackResult := setupRequestHijacking(page, hijackConfig)
 
@@ -484,6 +620,10 @@ func executeBrowserRequest(url, htmlContent string, config *RequestConfig) (*Bro
 		response.NetworkRequests = hijackResult.NetworkRequests
 	}
 
+	if config.CaptureLogs {
+		response.ConsoleLogs = hijackResult.ConsoleLogs
+	}
+
 	return response, nil
 }
 
@@ -565,6 +705,7 @@ func main() {
 		config.CaptureHTML = true
 		config.CaptureCookies = true
 		config.CaptureNetwork = true
+		config.CaptureLogs = true
 		response, err := executeBrowserRequest(url, htmlContent, config)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error processing request: %v\n", err)
