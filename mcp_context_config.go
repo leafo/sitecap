@@ -15,7 +15,6 @@ type BrowserContextConfig struct {
 	DomainWhitelist []string
 	Cookies         []*proto.NetworkCookieParam
 	Headers         map[string]string
-	UserAgent       string
 	LastRequestID   string
 	RequestHistory  []string // Request IDs in chronological order
 	CreatedAt       time.Time

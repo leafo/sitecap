@@ -230,7 +230,7 @@ func TestMCPServerManagersInitialization(t *testing.T) {
 
 	if requestManager != nil {
 		// Test that we can store and retrieve a request
-		testRequest := &StoredRequest{
+		testRequest := &RequestHistoryEntry{
 			ID:          "test-id",
 			ContextName: "test-context",
 			URL:         "https://example.com",
@@ -508,12 +508,12 @@ func TestMCPServerHTMLScreenshotWithCookieUpdates(t *testing.T) {
 	}
 
 	// Check for HTML content in stored request
-	if lastRequest.HTML == "" {
+	if lastRequest.Response == nil || lastRequest.Response.HTML == nil || *lastRequest.Response.HTML == "" {
 		t.Error("Expected HTML content to be stored in request")
 	}
 
 	// Verify screenshot data is stored
-	if len(lastRequest.Screenshot) == 0 {
+	if lastRequest.Response == nil || len(lastRequest.Response.Screenshot) == 0 {
 		t.Error("Expected screenshot data to be stored in request")
 	}
 
@@ -625,17 +625,21 @@ func TestMCPServerCookieUpdates(t *testing.T) {
 	t.Logf("Context has %d cookies after request", len(context.Cookies))
 
 	// Debug: check the stored request for details about what was captured
-	var lastRequest *StoredRequest
+	var lastRequest *RequestHistoryEntry
 	if req, exists := requestManager.GetRequest(context.LastRequestID); exists {
 		lastRequest = req
 		t.Logf("Debug: Request URL was %s", lastRequest.URL)
-		t.Logf("Debug: Response headers captured: %d", len(lastRequest.ResponseHeaders))
-		t.Logf("Debug: SetCookies captured: %d", len(lastRequest.SetCookies))
+		// Response headers are not directly stored in the current structure
+		var cookiesCount int
+		if lastRequest.Response != nil {
+			cookiesCount = len(lastRequest.Response.Cookies)
+		}
+		t.Logf("Debug: Cookies captured: %d", cookiesCount)
 
-		if len(lastRequest.SetCookies) > 0 {
+		if lastRequest.Response != nil && len(lastRequest.Response.Cookies) > 0 {
 			t.Logf("✓ Cookies were captured from HTTP response:")
-			for i, cookie := range lastRequest.SetCookies {
-				t.Logf("  SetCookie[%d]: %s=%s (domain=%s, path=%s)", i, cookie.Name, cookie.Value, cookie.Domain, cookie.Path)
+			for i, cookie := range lastRequest.Response.Cookies {
+				t.Logf("  Cookie[%d]: %s=%s (domain=%s, path=%s)", i, cookie.Name, cookie.Value, cookie.Domain, cookie.Path)
 			}
 		} else {
 			t.Logf("No cookies were captured from HTTP response - this may indicate an issue with cookie capture")
@@ -643,7 +647,11 @@ func TestMCPServerCookieUpdates(t *testing.T) {
 	}
 
 	// Verify that cookies were captured and updated in context
-	if len(context.Cookies) == 0 && lastRequest != nil && len(lastRequest.SetCookies) == 0 {
+	var lastRequestCookiesCount int
+	if lastRequest != nil && lastRequest.Response != nil {
+		lastRequestCookiesCount = len(lastRequest.Response.Cookies)
+	}
+	if len(context.Cookies) == 0 && lastRequestCookiesCount == 0 {
 		t.Error("Expected cookies to be captured and updated in context with update_cookies=true")
 		t.Error("This suggests the cookie capture implementation may have an issue")
 	} else if len(context.Cookies) > 0 {
@@ -691,12 +699,16 @@ func TestMCPServerCookieUpdates(t *testing.T) {
 		t.Errorf("Expected URL %s, got %s", serverURL, lastRequest.URL)
 	}
 
-	// Verify SetCookies field - cookie capture should now be working
-	if len(lastRequest.SetCookies) == 0 {
-		t.Error("SetCookies field is empty - cookie capture implementation may have an issue")
+	// Verify Cookies field - cookie capture should now be working
+	var responseCookiesCount int
+	if lastRequest.Response != nil {
+		responseCookiesCount = len(lastRequest.Response.Cookies)
+	}
+	if responseCookiesCount == 0 {
+		t.Error("Response cookies field is empty - cookie capture implementation may have an issue")
 		t.Error("Expected cookies to be captured from HTTP response headers")
 	} else {
-		t.Logf("✓ Request history shows %d cookies were captured and stored", len(lastRequest.SetCookies))
+		t.Logf("✓ Request history shows %d cookies were captured and stored", responseCookiesCount)
 	}
 
 	t.Logf("✓ Cookie integration test completed")

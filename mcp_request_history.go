@@ -1,78 +1,69 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"sync"
 	"time"
-
-	"github.com/go-rod/rod/lib/proto"
 )
 
-// StoredRequest contains comprehensive information about a browser request
-type StoredRequest struct {
-	ID              string                      `json:"id"`
-	ContextName     string                      `json:"context_name"`
-	URL             string                      `json:"url"`
-	Timestamp       time.Time                   `json:"timestamp"`
-	StatusCode      int                         `json:"status_code"`
-	ResponseHeaders map[string][]string         `json:"response_headers"`
-	SetCookies      []*proto.NetworkCookieParam `json:"set_cookies"`
-	HTML            string                      `json:"html,omitempty"`
-	NetworkRequests []NetworkRequestInfo        `json:"network_requests,omitempty"`
-	ConsoleLogs     []ConsoleMessage            `json:"console_logs,omitempty"`
-	Screenshot      []byte                      `json:"screenshot,omitempty"`
-	Error           string                      `json:"error,omitempty"`
-	Duration        time.Duration               `json:"duration"`
-	RequestType     string                      `json:"request_type"` // screenshot, get_html, etc.
-}
-
-// NetworkRequestInfo contains information about individual network requests
-type NetworkRequestInfo struct {
-	URL             string              `json:"url"`
-	Method          string              `json:"method"`
-	StatusCode      int                 `json:"status_code"`
-	RequestHeaders  map[string]string   `json:"request_headers"`
-	ResponseHeaders map[string][]string `json:"response_headers"`
-	ResponseBody    string              `json:"response_body,omitempty"`
-	Duration        time.Duration       `json:"duration"`
-	Timestamp       time.Time           `json:"timestamp"`
-	Failed          bool                `json:"failed"`
-	ErrorText       string              `json:"error_text,omitempty"`
-}
-
-// ConsoleMessage represents a console log message
-type ConsoleMessage struct {
-	Level      string    `json:"level"` // log, warn, error, info, debug
-	Message    string    `json:"message"`
-	Timestamp  time.Time `json:"timestamp"`
-	Source     string    `json:"source,omitempty"`
-	Line       int       `json:"line,omitempty"`
-	Column     int       `json:"column,omitempty"`
-	StackTrace string    `json:"stack_trace,omitempty"`
+type RequestHistoryEntry struct {
+	ID          string           `json:"id"`
+	ContextName string           `json:"context_name"`
+	URL         string           `json:"url"`
+	InputHTML   string           `json:"input_html,omitempty"` // HTML content for HTML-based requests
+	Timestamp   time.Time        `json:"timestamp"`
+	Duration    time.Duration    `json:"duration"`
+	RequestType string           `json:"request_type"` // screenshot, get_html, screenshot_html
+	Config      *RequestConfig   `json:"config"`
+	Response    *BrowserResponse `json:"response"`
+	Error       string           `json:"error,omitempty"`
 }
 
 // RequestHistoryManager manages stored browser requests
 type RequestHistoryManager struct {
-	requests map[string]*StoredRequest
+	requests map[string]*RequestHistoryEntry
 	mutex    sync.RWMutex
 }
 
 // NewRequestHistoryManager creates a new request history manager
 func NewRequestHistoryManager() *RequestHistoryManager {
 	return &RequestHistoryManager{
-		requests: make(map[string]*StoredRequest),
+		requests: make(map[string]*RequestHistoryEntry),
 	}
 }
 
+// NewRequestHistoryEntry creates a new request history entry with auto-generated ID
+func NewRequestHistoryEntry(contextName, url, inputHTML, requestType string, config *RequestConfig, response *BrowserResponse, startTime time.Time, err error) *RequestHistoryEntry {
+	entry := &RequestHistoryEntry{
+		ID:          generateRequestID(),
+		ContextName: contextName,
+		URL:         url,
+		InputHTML:   inputHTML,
+		Timestamp:   startTime,
+		Duration:    time.Since(startTime),
+		RequestType: requestType,
+		Config:      config,
+		Response:    response,
+	}
+
+	if err != nil {
+		entry.Error = err.Error()
+	}
+
+	return entry
+}
+
 // StoreRequest stores a complete request with all its data
-func (m *RequestHistoryManager) StoreRequest(request *StoredRequest) {
+func (m *RequestHistoryManager) StoreRequest(entry *RequestHistoryEntry) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	m.requests[request.ID] = request
+	m.requests[entry.ID] = entry
 }
 
 // GetRequest retrieves a stored request by ID
-func (m *RequestHistoryManager) GetRequest(requestID string) (*StoredRequest, bool) {
+func (m *RequestHistoryManager) GetRequest(requestID string) (*RequestHistoryEntry, bool) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
@@ -81,7 +72,7 @@ func (m *RequestHistoryManager) GetRequest(requestID string) (*StoredRequest, bo
 }
 
 // GetLastRequest retrieves the most recent request for a context
-func (m *RequestHistoryManager) GetLastRequest(contextName string, configManager *ContextConfigManager) (*StoredRequest, bool) {
+func (m *RequestHistoryManager) GetLastRequest(contextName string, configManager *ContextConfigManager) (*RequestHistoryEntry, bool) {
 	context, exists := configManager.GetContext(contextName)
 	if !exists || len(context.RequestHistory) == 0 {
 		return nil, false
@@ -92,65 +83,71 @@ func (m *RequestHistoryManager) GetLastRequest(contextName string, configManager
 }
 
 // CreateRequestResponse creates a response structure for MCP calls
-func (m *RequestHistoryManager) CreateRequestResponse(request *StoredRequest, includeHTML, includeNetwork, includeConsole bool) map[string]interface{} {
+func (m *RequestHistoryManager) CreateRequestResponse(entry *RequestHistoryEntry, includeHTML, includeNetwork, includeConsole bool) map[string]interface{} {
 	response := map[string]interface{}{
-		"id":               request.ID,
-		"context_name":     request.ContextName,
-		"url":              request.URL,
-		"timestamp":        request.Timestamp,
-		"status_code":      request.StatusCode,
-		"response_headers": request.ResponseHeaders,
-		"duration":         request.Duration.Milliseconds(),
-		"request_type":     request.RequestType,
+		"id":           entry.ID,
+		"context_name": entry.ContextName,
+		"url":          entry.URL,
+		"timestamp":    entry.Timestamp,
+		"duration":     entry.Duration.Milliseconds(),
+		"request_type": entry.RequestType,
 	}
 
-	if request.Error != "" {
-		response["error"] = request.Error
+	// Include input HTML if present
+	if entry.InputHTML != "" {
+		response["input_html"] = entry.InputHTML
 	}
 
-	if len(request.SetCookies) > 0 {
-		cookies := make([]map[string]interface{}, len(request.SetCookies))
-		for i, cookie := range request.SetCookies {
-			cookies[i] = map[string]interface{}{
-				"name":     cookie.Name,
-				"value":    cookie.Value,
-				"domain":   cookie.Domain,
-				"path":     cookie.Path,
-				"expires":  cookie.Expires,
-				"httpOnly": cookie.HTTPOnly,
-				"secure":   cookie.Secure,
-				"sameSite": cookie.SameSite,
+	if entry.Error != "" {
+		response["error"] = entry.Error
+		return response
+	}
+
+	// Extract information from the BrowserResponse
+	if entry.Response != nil {
+
+		// Convert cookies to expected format
+		if len(entry.Response.Cookies) > 0 {
+			cookies := make([]map[string]interface{}, len(entry.Response.Cookies))
+			for i, cookie := range entry.Response.Cookies {
+				cookies[i] = map[string]interface{}{
+					"name":     cookie.Name,
+					"value":    cookie.Value,
+					"domain":   cookie.Domain,
+					"path":     cookie.Path,
+					"expires":  cookie.Expires,
+					"httpOnly": cookie.HTTPOnly,
+					"secure":   cookie.Secure,
+					"sameSite": cookie.SameSite,
+				}
 			}
+			response["set_cookies"] = cookies
 		}
-		response["set_cookies"] = cookies
-	}
 
-	if includeHTML && request.HTML != "" {
-		response["html"] = request.HTML
-	}
+		if includeHTML && entry.Response.HTML != nil {
+			response["html"] = *entry.Response.HTML
+		}
 
-	if includeNetwork && len(request.NetworkRequests) > 0 {
-		response["network_requests"] = request.NetworkRequests
-	}
+		if includeNetwork {
+			response["network_requests"] = entry.Response.NetworkRequests
+		}
 
-	if includeConsole && len(request.ConsoleLogs) > 0 {
-		response["console_logs"] = request.ConsoleLogs
+		if includeConsole {
+			response["console_logs"] = entry.Response.ConsoleLogs
+		}
 	}
 
 	return response
 }
 
-// GenerateRequestID generates a unique request ID
-func GenerateRequestID() string {
-	return time.Now().Format("20060102150405") + "_" + randomString(8)
-}
+func generateRequestID() string {
+	timestamp := time.Now().Format("20060102150405")
 
-// randomString generates a random string of specified length
-func randomString(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
-	result := make([]byte, length)
-	for i := range result {
-		result[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+	// Generate 8 random bytes
+	randomBytes := make([]byte, 4)
+	if _, err := rand.Read(randomBytes); err != nil {
+		panic("failed to read random bytes: " + err.Error())
 	}
-	return string(result)
+
+	return timestamp + "_" + hex.EncodeToString(randomBytes)
 }

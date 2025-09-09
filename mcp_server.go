@@ -31,7 +31,6 @@ func StartMCPServer() {
 		DomainWhitelist: []string{},
 		Cookies:         []*proto.NetworkCookieParam{},
 		Headers:         map[string]string{},
-		UserAgent:       "",
 		RequestHistory:  []string{},
 	}
 	configManager.CreateOrUpdateContext("default", defaultConfig)

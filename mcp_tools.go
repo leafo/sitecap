@@ -31,7 +31,6 @@ type ConfigureContextArgs struct {
 	Domains     string            `json:"domains,omitempty" jsonschema:"comma-separated list of allowed domains for request filtering"`
 	Cookies     []CookieInput     `json:"cookies,omitempty" jsonschema:"array of cookie objects to set in the browser context"`
 	Headers     map[string]string `json:"headers,omitempty" jsonschema:"default HTTP headers to send with all requests"`
-	UserAgent   string            `json:"user_agent,omitempty" jsonschema:"custom user agent string to use"`
 }
 
 type ScreenshotArgs struct {
@@ -77,7 +76,6 @@ type ScreenshotResult struct {
 	Screenshot  string `json:"screenshot"`
 	ContentType string `json:"content_type"`
 	URL         string `json:"url"`
-	StatusCode  int    `json:"status_code"`
 	Duration    int64  `json:"duration"`
 }
 
@@ -189,7 +187,6 @@ func handleConfigureContext(ctx context.Context, request *mcp.CallToolRequest, a
 		DomainWhitelist: domainWhitelist,
 		Cookies:         cookies,
 		Headers:         args.Headers,
-		UserAgent:       args.UserAgent,
 	}
 
 	// Set default headers if none provided
@@ -245,8 +242,6 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 		}, ScreenshotResult{}, fmt.Errorf("context not found: %s", contextName)
 	}
 
-	// Generate request ID
-	requestID := GenerateRequestID()
 	startTime := time.Now()
 
 	// Create request config
@@ -266,32 +261,12 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 	requestConfig.CaptureHTML = true
 	response, err := executeBrowserRequest(args.URL, "", requestConfig)
 
-	// Create stored request
-	var html string
-	if response.HTML != nil {
-		html = *response.HTML
-	}
-
-	storedRequest := &StoredRequest{
-		ID:          requestID,
-		ContextName: contextName,
-		URL:         args.URL,
-		Timestamp:   startTime,
-		Duration:    time.Since(startTime),
-		RequestType: "screenshot",
-		Screenshot:  response.Screenshot,
-		HTML:        html,
-	}
-
-	// Convert captured cookies from Rod format to storage format
-	if len(response.Cookies) > 0 {
-		storedRequest.SetCookies = convertRodCookiesToParams(response.Cookies)
-	}
+	// Create request history entry
+	entry := NewRequestHistoryEntry(contextName, args.URL, "", "screenshot", requestConfig, response, startTime, err)
 
 	if err != nil {
-		storedRequest.Error = err.Error()
-		requestManager.StoreRequest(storedRequest)
-		configManager.AddRequestToHistory(contextName, requestID)
+		requestManager.StoreRequest(entry)
+		configManager.AddRequestToHistory(contextName, entry.ID)
 
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -301,25 +276,23 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 		}, ScreenshotResult{}, fmt.Errorf("screenshot failed: %v", err)
 	}
 
-	storedRequest.StatusCode = 200
-
 	// Handle cookie updates if requested
-	if args.UpdateCookies && len(storedRequest.SetCookies) > 0 {
-		configManager.UpdateCookies(contextName, storedRequest.SetCookies, true)
+	if args.UpdateCookies && len(response.Cookies) > 0 {
+		cookieParams := convertRodCookiesToParams(response.Cookies)
+		configManager.UpdateCookies(contextName, cookieParams, true)
 	}
 
 	// Store request and update history
-	requestManager.StoreRequest(storedRequest)
-	configManager.AddRequestToHistory(contextName, requestID)
+	requestManager.StoreRequest(entry)
+	configManager.AddRequestToHistory(contextName, entry.ID)
 
 	result := ScreenshotResult{
 		Success:     true,
-		RequestID:   requestID,
+		RequestID:   entry.ID,
 		Screenshot:  base64.StdEncoding.EncodeToString(response.Screenshot),
 		ContentType: response.ContentType,
 		URL:         args.URL,
-		StatusCode:  storedRequest.StatusCode,
-		Duration:    storedRequest.Duration.Milliseconds(),
+		Duration:    entry.Duration.Milliseconds(),
 	}
 
 	return &mcp.CallToolResult{
@@ -355,8 +328,6 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 		}, ScreenshotResult{}, fmt.Errorf("context not found: %s", contextName)
 	}
 
-	// Generate request ID
-	requestID := GenerateRequestID()
 	startTime := time.Now()
 
 	// Create request config
@@ -376,32 +347,12 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 	requestConfig.CaptureHTML = true
 	response, err := executeBrowserRequest("", args.HTMLContent, requestConfig)
 
-	// Create stored request
-	var renderedHTML string
-	if response.HTML != nil {
-		renderedHTML = *response.HTML
-	}
-
-	storedRequest := &StoredRequest{
-		ID:          requestID,
-		ContextName: contextName,
-		URL:         "(HTML content)",
-		Timestamp:   startTime,
-		Duration:    time.Since(startTime),
-		RequestType: "screenshot_html",
-		Screenshot:  response.Screenshot,
-		HTML:        renderedHTML, // Store the rendered HTML content (not original input)
-	}
-
-	// Convert captured cookies from Rod format to storage format
-	if len(response.Cookies) > 0 {
-		storedRequest.SetCookies = convertRodCookiesToParams(response.Cookies)
-	}
+	// Create request history entry
+	entry := NewRequestHistoryEntry(contextName, "", args.HTMLContent, "screenshot_html", requestConfig, response, startTime, err)
 
 	if err != nil {
-		storedRequest.Error = err.Error()
-		requestManager.StoreRequest(storedRequest)
-		configManager.AddRequestToHistory(contextName, requestID)
+		requestManager.StoreRequest(entry)
+		configManager.AddRequestToHistory(contextName, entry.ID)
 
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -411,25 +362,23 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 		}, ScreenshotResult{}, fmt.Errorf("HTML screenshot failed: %v", err)
 	}
 
-	storedRequest.StatusCode = 200
-
 	// Handle cookie updates if requested (though less relevant for HTML content)
-	if args.UpdateCookies && len(storedRequest.SetCookies) > 0 {
-		configManager.UpdateCookies(contextName, storedRequest.SetCookies, true)
+	if args.UpdateCookies && len(response.Cookies) > 0 {
+		cookieParams := convertRodCookiesToParams(response.Cookies)
+		configManager.UpdateCookies(contextName, cookieParams, true)
 	}
 
 	// Store request and update history
-	requestManager.StoreRequest(storedRequest)
-	configManager.AddRequestToHistory(contextName, requestID)
+	requestManager.StoreRequest(entry)
+	configManager.AddRequestToHistory(contextName, entry.ID)
 
 	result := ScreenshotResult{
 		Success:     true,
-		RequestID:   requestID,
+		RequestID:   entry.ID,
 		Screenshot:  base64.StdEncoding.EncodeToString(response.Screenshot),
 		ContentType: response.ContentType,
 		URL:         "(HTML content)",
-		StatusCode:  storedRequest.StatusCode,
-		Duration:    storedRequest.Duration.Milliseconds(),
+		Duration:    entry.Duration.Milliseconds(),
 	}
 
 	return &mcp.CallToolResult{
@@ -465,8 +414,6 @@ func handleMCPGetHTML(ctx context.Context, request *mcp.CallToolRequest, args Ge
 		}, nil, fmt.Errorf("context not found: %s", contextName)
 	}
 
-	// Generate request ID and get HTML
-	requestID := GenerateRequestID()
 	startTime := time.Now()
 
 	requestConfig := &RequestConfig{
@@ -482,30 +429,12 @@ func handleMCPGetHTML(ctx context.Context, request *mcp.CallToolRequest, args Ge
 	requestConfig.CaptureHTML = true
 	response, err := executeBrowserRequest(args.URL, "", requestConfig)
 
-	var html string
-	if response.HTML != nil {
-		html = *response.HTML
-	}
-
-	storedRequest := &StoredRequest{
-		ID:          requestID,
-		ContextName: contextName,
-		URL:         args.URL,
-		Timestamp:   startTime,
-		Duration:    time.Since(startTime),
-		RequestType: "get_html",
-		HTML:        html,
-	}
-
-	// Convert captured cookies from Rod format to storage format
-	if len(response.Cookies) > 0 {
-		storedRequest.SetCookies = convertRodCookiesToParams(response.Cookies)
-	}
+	// Create request history entry
+	entry := NewRequestHistoryEntry(contextName, args.URL, "", "get_html", requestConfig, response, startTime, err)
 
 	if err != nil {
-		storedRequest.Error = err.Error()
-		requestManager.StoreRequest(storedRequest)
-		configManager.AddRequestToHistory(contextName, requestID)
+		requestManager.StoreRequest(entry)
+		configManager.AddRequestToHistory(contextName, entry.ID)
 
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -515,24 +444,27 @@ func handleMCPGetHTML(ctx context.Context, request *mcp.CallToolRequest, args Ge
 		}, nil, fmt.Errorf("get HTML failed: %v", err)
 	}
 
-	storedRequest.StatusCode = 200
-
 	// Handle cookie updates if requested
-	if args.UpdateCookies && len(storedRequest.SetCookies) > 0 {
-		configManager.UpdateCookies(contextName, storedRequest.SetCookies, true)
+	if args.UpdateCookies && len(response.Cookies) > 0 {
+		cookieParams := convertRodCookiesToParams(response.Cookies)
+		configManager.UpdateCookies(contextName, cookieParams, true)
 	}
 
 	// Store request and update history
-	requestManager.StoreRequest(storedRequest)
-	configManager.AddRequestToHistory(contextName, requestID)
+	requestManager.StoreRequest(entry)
+	configManager.AddRequestToHistory(contextName, entry.ID)
+
+	var html string
+	if response.HTML != nil {
+		html = *response.HTML
+	}
 
 	result := map[string]interface{}{
-		"success":     true,
-		"request_id":  requestID,
-		"html":        html,
-		"url":         args.URL,
-		"status_code": storedRequest.StatusCode,
-		"duration":    storedRequest.Duration.Milliseconds(),
+		"success":    true,
+		"request_id": entry.ID,
+		"html":       html,
+		"url":        args.URL,
+		"duration":   entry.Duration.Milliseconds(),
 	}
 
 	return &mcp.CallToolResult{
