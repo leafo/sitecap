@@ -252,16 +252,17 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 		DomainWhitelist: config.DomainWhitelist,
 		ResizeParam:     args.Resize,
 		CustomHeaders:   config.Headers,
-		Debug:           false,
-		CaptureCookies:  args.UpdateCookies, // Enable cookie capture when cookies should be updated
+
+		// capture everything
+		CaptureCookies:    true,
+		CaptureScreenshot: true,
+		CaptureHTML:       true,
+		CaptureNetwork:    true,
+		CaptureLogs:       true,
 	}
 
-	// Take screenshot using existing sitecap functionality
-	requestConfig.CaptureScreenshot = true
-	requestConfig.CaptureHTML = true
 	response, err := executeBrowserRequest(args.URL, "", requestConfig)
 
-	// Create request history entry
 	entry := NewRequestHistoryEntry(contextName, args.URL, "", "screenshot", requestConfig, response, startTime, err)
 
 	if err != nil {
@@ -338,16 +339,17 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 		DomainWhitelist: config.DomainWhitelist,
 		ResizeParam:     args.Resize,
 		CustomHeaders:   config.Headers,
-		Debug:           false,
-		CaptureCookies:  args.UpdateCookies, // Enable cookie capture when cookies should be updated
+
+		// capture everything
+		CaptureCookies:    true,
+		CaptureScreenshot: true,
+		CaptureHTML:       true,
+		CaptureNetwork:    true,
+		CaptureLogs:       true,
 	}
 
-	// Take screenshot from HTML using existing sitecap functionality
-	requestConfig.CaptureScreenshot = true
-	requestConfig.CaptureHTML = true
 	response, err := executeBrowserRequest("", args.HTMLContent, requestConfig)
 
-	// Create request history entry
 	entry := NewRequestHistoryEntry(contextName, "", args.HTMLContent, "screenshot_html", requestConfig, response, startTime, err)
 
 	if err != nil {
@@ -423,13 +425,15 @@ func handleMCPGetHTML(ctx context.Context, request *mcp.CallToolRequest, args Ge
 		DomainWhitelist: config.DomainWhitelist,
 		CustomHeaders:   config.Headers,
 		Debug:           false,
-		CaptureCookies:  args.UpdateCookies, // Enable cookie capture when cookies should be updated
+
+		CaptureCookies: true,
+		CaptureHTML:    true,
+		CaptureNetwork: true,
+		CaptureLogs:    true,
 	}
 
-	requestConfig.CaptureHTML = true
 	response, err := executeBrowserRequest(args.URL, "", requestConfig)
 
-	// Create request history entry
 	entry := NewRequestHistoryEntry(contextName, args.URL, "", "get_html", requestConfig, response, startTime, err)
 
 	if err != nil {
