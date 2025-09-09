@@ -448,7 +448,6 @@ func TestMCPServerHTMLScreenshotWithCookieUpdates(t *testing.T) {
 		"html_content":   htmlContent,
 		"context_name":   "test_context",
 		"update_cookies": true,
-		"wait_timeout":   5,
 	}
 
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{
@@ -590,7 +589,6 @@ func TestMCPServerCookieUpdates(t *testing.T) {
 		"url":            serverURL,
 		"context_name":   "cookie_test_context",
 		"update_cookies": true,
-		"wait_timeout":   5,
 	}
 
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{

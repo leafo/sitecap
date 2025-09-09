@@ -39,8 +39,6 @@ type ScreenshotArgs struct {
 	URL           string `json:"url" jsonschema:"URL to capture screenshot from"`
 	ContextName   string `json:"context_name,omitempty" jsonschema:"browser context to use (default: 'default')"`
 	Resize        string `json:"resize,omitempty" jsonschema:"resize parameters like '800x600', '800x600!' for exact size, or '50%x50%' for percentage"`
-	WaitFor       string `json:"wait_for,omitempty" jsonschema:"CSS selector to wait for before taking screenshot"`
-	WaitTimeout   int    `json:"wait_timeout,omitempty" jsonschema:"timeout in seconds for wait condition (default: 10)"`
 	UpdateCookies bool   `json:"update_cookies,omitempty" jsonschema:"automatically apply set-cookie headers from response to context"`
 }
 
@@ -48,15 +46,12 @@ type ScreenshotHTMLArgs struct {
 	HTMLContent   string `json:"html_content" jsonschema:"HTML content to render and screenshot"`
 	ContextName   string `json:"context_name,omitempty" jsonschema:"browser context to use (default: 'default')"`
 	Resize        string `json:"resize,omitempty" jsonschema:"resize parameters like '800x600', '800x600!' for exact size, or '50%x50%' for percentage"`
-	WaitTimeout   int    `json:"wait_timeout,omitempty" jsonschema:"timeout in seconds for wait condition (default: 10)"`
 	UpdateCookies bool   `json:"update_cookies,omitempty" jsonschema:"automatically apply set-cookie headers from response to context"`
 }
 
 type GetHTMLArgs struct {
 	URL           string `json:"url" jsonschema:"URL to get rendered HTML content from"`
 	ContextName   string `json:"context_name,omitempty" jsonschema:"browser context to use (default: 'default')"`
-	WaitFor       string `json:"wait_for,omitempty" jsonschema:"CSS selector to wait for before extracting HTML"`
-	WaitTimeout   int    `json:"wait_timeout,omitempty" jsonschema:"timeout in seconds for wait condition (default: 10)"`
 	UpdateCookies bool   `json:"update_cookies,omitempty" jsonschema:"automatically apply set-cookie headers from response to context"`
 }
 
