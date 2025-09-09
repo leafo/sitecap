@@ -14,7 +14,6 @@ import (
 var (
 	configManager  *ContextConfigManager
 	requestManager *RequestHistoryManager
-	cookieManager  *CookieManager
 )
 
 // RunMCPServer starts the MCP server
@@ -24,7 +23,6 @@ func RunMCPServer() {
 	// Initialize managers
 	configManager = NewContextConfigManager()
 	requestManager = NewRequestHistoryManager()
-	cookieManager = NewCookieManager()
 
 	// Create default empty browsing context
 	defaultConfig := &BrowserContextConfig{

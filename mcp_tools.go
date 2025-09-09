@@ -123,6 +123,25 @@ func convertCookieInputs(inputs []CookieInput) []*proto.NetworkCookieParam {
 	return cookies
 }
 
+// convertRodCookiesToParams converts Rod's NetworkCookie to NetworkCookieParam format
+func convertRodCookiesToParams(rodCookies []*proto.NetworkCookie) []*proto.NetworkCookieParam {
+	cookies := make([]*proto.NetworkCookieParam, len(rodCookies))
+	for i, rodCookie := range rodCookies {
+		cookie := &proto.NetworkCookieParam{
+			Name:     rodCookie.Name,
+			Value:    rodCookie.Value,
+			Domain:   rodCookie.Domain,
+			Path:     rodCookie.Path,
+			Expires:  rodCookie.Expires,
+			HTTPOnly: rodCookie.HTTPOnly,
+			Secure:   rodCookie.Secure,
+			SameSite: rodCookie.SameSite,
+		}
+		cookies[i] = cookie
+	}
+	return cookies
+}
+
 // Tool handlers with proper MCP signatures
 
 func handleConfigureContext(ctx context.Context, request *mcp.CallToolRequest, args ConfigureContextArgs) (*mcp.CallToolResult, ConfigureContextResult, error) {
@@ -247,6 +266,7 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 		ResizeParam:     args.Resize,
 		CustomHeaders:   config.Headers,
 		Debug:           false,
+		CaptureResponse: args.UpdateCookies, // Enable response capture when cookies should be updated
 	}
 
 	// Take screenshot using existing sitecap functionality
@@ -261,6 +281,11 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 		Duration:    time.Since(startTime),
 		RequestType: "screenshot",
 		Screenshot:  img,
+	}
+
+	// Convert captured cookies from Rod format to storage format
+	if len(requestConfig.Cookies) > 0 {
+		storedRequest.SetCookies = convertRodCookiesToParams(requestConfig.Cookies)
 	}
 
 	if err != nil {
@@ -343,6 +368,7 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 		ResizeParam:     args.Resize,
 		CustomHeaders:   config.Headers,
 		Debug:           false,
+		CaptureResponse: args.UpdateCookies, // Enable response capture when cookies should be updated
 	}
 
 	// Take screenshot from HTML using existing sitecap functionality
@@ -358,6 +384,11 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 		RequestType: "screenshot_html",
 		Screenshot:  img,
 		HTML:        args.HTMLContent, // Store the original HTML content
+	}
+
+	// Convert captured cookies from Rod format to storage format
+	if len(requestConfig.Cookies) > 0 {
+		storedRequest.SetCookies = convertRodCookiesToParams(requestConfig.Cookies)
 	}
 
 	if err != nil {
@@ -438,6 +469,7 @@ func handleMCPGetHTML(ctx context.Context, request *mcp.CallToolRequest, args Ge
 		DomainWhitelist: config.DomainWhitelist,
 		CustomHeaders:   config.Headers,
 		Debug:           false,
+		CaptureResponse: args.UpdateCookies, // Enable response capture when cookies should be updated
 	}
 
 	html, err := TakeHTMLContent(args.URL, requestConfig)
@@ -450,6 +482,11 @@ func handleMCPGetHTML(ctx context.Context, request *mcp.CallToolRequest, args Ge
 		Duration:    time.Since(startTime),
 		RequestType: "get_html",
 		HTML:        html,
+	}
+
+	// Convert captured cookies from Rod format to storage format
+	if len(requestConfig.Cookies) > 0 {
+		storedRequest.SetCookies = convertRodCookiesToParams(requestConfig.Cookies)
 	}
 
 	if err != nil {
@@ -466,6 +503,11 @@ func handleMCPGetHTML(ctx context.Context, request *mcp.CallToolRequest, args Ge
 	}
 
 	storedRequest.StatusCode = 200
+
+	// Handle cookie updates if requested
+	if args.UpdateCookies && len(storedRequest.SetCookies) > 0 {
+		configManager.UpdateCookies(contextName, storedRequest.SetCookies, true)
+	}
 
 	// Store request and update history
 	requestManager.StoreRequest(storedRequest)

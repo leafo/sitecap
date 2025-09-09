@@ -26,6 +26,8 @@ type RequestConfig struct {
 	ResizeParam     string
 	CustomHeaders   map[string]string
 	Debug           bool
+	CaptureResponse bool                   // Enable cookie capture after navigation
+	Cookies         []*proto.NetworkCookie // Captured cookies from browser
 }
 
 var globalDebug bool
@@ -320,6 +322,24 @@ func setupBrowserPage(url, htmlContent string, config *RequestConfig) (*rod.Page
 	}
 
 	page.MustWaitLoad()
+
+	// Capture cookies using Rod's built-in API if requested
+	if config.CaptureResponse {
+		if url != "" {
+			// For URL-based requests, get cookies for that specific URL
+			cookies, err := page.Cookies([]string{url})
+			if err == nil {
+				config.Cookies = cookies
+			}
+		} else {
+			// For HTML content, get all cookies
+			cookies, err := page.Cookies([]string{})
+			if err == nil {
+				config.Cookies = cookies
+			}
+		}
+	}
+
 	return page, cleanup, nil
 }
 
