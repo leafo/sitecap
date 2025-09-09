@@ -17,6 +17,18 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 )
 
+type CapturedNetworkRequest struct {
+	URL             string            `json:"url"`
+	Method          string            `json:"method"`
+	StatusCode      int               `json:"status_code"`
+	RequestHeaders  map[string]string `json:"request_headers"`
+	ResponseHeaders map[string]string `json:"response_headers"`
+	Duration        int64             `json:"duration_ms"`
+	Timestamp       time.Time         `json:"timestamp"`
+	Failed          bool              `json:"failed"`
+	ErrorText       string            `json:"error_text,omitempty"`
+}
+
 type RequestConfig struct {
 	ViewportWidth   int
 	ViewportHeight  int
@@ -29,21 +41,24 @@ type RequestConfig struct {
 	CaptureCookies    bool // Enable cookie capture after navigation
 	CaptureScreenshot bool // Enable screenshot capture
 	CaptureHTML       bool // Enable HTML content capture
+	CaptureNetwork    bool // Enable network request capture
 	JSONOutput        bool // Enable JSON output mode
 }
 
 type BrowserResponse struct {
-	Cookies     []*proto.NetworkCookie // Captured cookies from browser
-	HTML        *string                // Rendered HTML content (nil if not captured)
-	Screenshot  []byte                 // Screenshot image data (nil if not captured)
-	ContentType string                 // Content type of screenshot (e.g., "image/png", "image/jpeg")
+	Cookies         []*proto.NetworkCookie   // Captured cookies from browser
+	HTML            *string                  // Rendered HTML content (nil if not captured)
+	Screenshot      []byte                   // Screenshot image data (nil if not captured)
+	ContentType     string                   // Content type of screenshot (e.g., "image/png", "image/jpeg")
+	NetworkRequests []CapturedNetworkRequest // Captured network requests (nil if not captured)
 }
 
 type JSONOutput struct {
-	HTML        *string                `json:"html,omitempty"`
-	Cookies     []*proto.NetworkCookie `json:"cookies,omitempty"`
-	Screenshot  *string                `json:"screenshot,omitempty"` // base64 encoded screenshot
-	ContentType string                 `json:"content_type,omitempty"`
+	HTML            *string                  `json:"html,omitempty"`
+	Cookies         []*proto.NetworkCookie   `json:"cookies,omitempty"`
+	Screenshot      *string                  `json:"screenshot,omitempty"` // base64 encoded screenshot
+	ContentType     string                   `json:"content_type,omitempty"`
+	NetworkRequests []CapturedNetworkRequest `json:"network_requests,omitempty"`
 }
 
 var globalDebug bool
@@ -51,9 +66,10 @@ var globalCustomHeaders map[string]string
 
 func convertToJSONOutput(response *BrowserResponse) *JSONOutput {
 	output := &JSONOutput{
-		HTML:        response.HTML,
-		Cookies:     response.Cookies,
-		ContentType: response.ContentType,
+		HTML:            response.HTML,
+		Cookies:         response.Cookies,
+		ContentType:     response.ContentType,
+		NetworkRequests: response.NetworkRequests,
 	}
 
 	if response.Screenshot != nil {
@@ -116,10 +132,18 @@ type HijackConfig struct {
 	CustomHeaders      map[string]string
 	Debug              bool
 	PermitFirstRequest bool // Always permit the first request regardless of authorized domains
+	CaptureNetwork     bool // Enable network request capture
 }
 
-func setupRequestHijacking(page *rod.Page, config *HijackConfig) {
-	// Set up network event logging for responses when debug is enabled
+type HijackResult struct {
+	NetworkRequests []CapturedNetworkRequest // Captured network requests during hijacking
+}
+
+func setupRequestHijacking(page *rod.Page, config *HijackConfig) *HijackResult {
+	result := &HijackResult{
+		NetworkRequests: make([]CapturedNetworkRequest, 0),
+	}
+
 	if config.Debug {
 		// Track request URLs by ID for failure logging
 		var requestURLs sync.Map
@@ -153,7 +177,80 @@ func setupRequestHijacking(page *rod.Page, config *HijackConfig) {
 		})()
 	}
 
-	if config.Debug || len(config.DomainWhitelist) > 0 || len(config.CustomHeaders) > 0 {
+	if config.CaptureNetwork {
+		// Track request details by ID
+		var requestTimes sync.Map
+		var requestInfo sync.Map
+		var networkRequestsMutex sync.Mutex
+
+		go page.EachEvent(func(e *proto.NetworkRequestWillBeSent) {
+			requestID := string(e.RequestID)
+			requestTimes.Store(requestID, time.Now())
+
+			// Convert headers to map
+			requestHeaders := make(map[string]string)
+			for key, value := range e.Request.Headers {
+				requestHeaders[key] = fmt.Sprintf("%v", value)
+			}
+
+			requestInfo.Store(requestID, CapturedNetworkRequest{
+				URL:            e.Request.URL,
+				Method:         e.Request.Method,
+				RequestHeaders: requestHeaders,
+				Timestamp:      time.Now(),
+			})
+		})()
+
+		go page.EachEvent(func(e *proto.NetworkResponseReceived) {
+			requestID := string(e.RequestID)
+
+			if reqInfo, exists := requestInfo.Load(requestID); exists {
+				if startTime, timeExists := requestTimes.Load(requestID); timeExists {
+					req := reqInfo.(CapturedNetworkRequest)
+					req.StatusCode = e.Response.Status
+					req.Duration = time.Since(startTime.(time.Time)).Milliseconds()
+
+					// Convert response headers to map
+					responseHeaders := make(map[string]string)
+					for key, value := range e.Response.Headers {
+						responseHeaders[key] = fmt.Sprintf("%v", value)
+					}
+					req.ResponseHeaders = responseHeaders
+
+					networkRequestsMutex.Lock()
+					result.NetworkRequests = append(result.NetworkRequests, req)
+					networkRequestsMutex.Unlock()
+
+					// Clean up
+					requestInfo.Delete(requestID)
+					requestTimes.Delete(requestID)
+				}
+			}
+		})()
+
+		go page.EachEvent(func(e *proto.NetworkLoadingFailed) {
+			requestID := string(e.RequestID)
+
+			if reqInfo, exists := requestInfo.Load(requestID); exists {
+				if startTime, timeExists := requestTimes.Load(requestID); timeExists {
+					req := reqInfo.(CapturedNetworkRequest)
+					req.Failed = true
+					req.ErrorText = e.ErrorText
+					req.Duration = time.Since(startTime.(time.Time)).Milliseconds()
+
+					networkRequestsMutex.Lock()
+					result.NetworkRequests = append(result.NetworkRequests, req)
+					networkRequestsMutex.Unlock()
+
+					// Clean up
+					requestInfo.Delete(requestID)
+					requestTimes.Delete(requestID)
+				}
+			}
+		})()
+	}
+
+	if config.Debug || len(config.DomainWhitelist) > 0 || len(config.CustomHeaders) > 0 || config.CaptureNetwork {
 		router := page.HijackRequests()
 		var firstRequest atomic.Bool
 		firstRequest.Store(true)
@@ -269,6 +366,8 @@ func setupRequestHijacking(page *rod.Page, config *HijackConfig) {
 		})
 		go router.Run()
 	}
+
+	return result
 }
 
 func executeBrowserRequest(url, htmlContent string, config *RequestConfig) (*BrowserResponse, error) {
@@ -288,15 +387,16 @@ func executeBrowserRequest(url, htmlContent string, config *RequestConfig) (*Bro
 
 	page := browser.MustPage()
 
-	// Set up request hijacking for debugging, domain filtering, or custom headers
+	// Set up request hijacking for debugging, domain filtering, custom headers, or network capture
 	hijackConfig := &HijackConfig{
 		MainURL:            url,
 		DomainWhitelist:    config.DomainWhitelist,
 		CustomHeaders:      config.CustomHeaders,
 		Debug:              config.Debug,
 		PermitFirstRequest: url != "",
+		CaptureNetwork:     config.CaptureNetwork,
 	}
-	setupRequestHijacking(page, hijackConfig)
+	hijackResult := setupRequestHijacking(page, hijackConfig)
 
 	// Set timeout if specified
 	if config.TimeoutSeconds > 0 {
@@ -380,6 +480,10 @@ func executeBrowserRequest(url, htmlContent string, config *RequestConfig) (*Bro
 		response.HTML = &html
 	}
 
+	if config.CaptureNetwork {
+		response.NetworkRequests = hijackResult.NetworkRequests
+	}
+
 	return response, nil
 }
 
@@ -460,6 +564,7 @@ func main() {
 	if *jsonMode {
 		config.CaptureHTML = true
 		config.CaptureCookies = true
+		config.CaptureNetwork = true
 		response, err := executeBrowserRequest(url, htmlContent, config)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error processing request: %v\n", err)
