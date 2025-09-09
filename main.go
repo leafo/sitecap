@@ -26,8 +26,17 @@ type RequestConfig struct {
 	ResizeParam     string
 	CustomHeaders   map[string]string
 	Debug           bool
-	CaptureResponse bool                   // Enable cookie capture after navigation
-	Cookies         []*proto.NetworkCookie // Captured cookies from browser
+
+	CaptureCookies    bool // Enable cookie capture after navigation
+	CaptureScreenshot bool // Enable screenshot capture
+	CaptureHTML       bool // Enable HTML content capture
+}
+
+type BrowserResponse struct {
+	Cookies     []*proto.NetworkCookie // Captured cookies from browser
+	HTML        *string                // Rendered HTML content (nil if not captured)
+	Screenshot  []byte                 // Screenshot image data (nil if not captured)
+	ContentType string                 // Content type of screenshot (e.g., "image/png", "image/jpeg")
 }
 
 var globalDebug bool
@@ -288,9 +297,20 @@ func setupRequestHijacking(page *rod.Page, config *HijackConfig) {
 	}
 }
 
-func setupBrowserPage(url, htmlContent string, config *RequestConfig) (*rod.Page, func(), error) {
-	browser := rod.New().MustConnect()
-	cleanup := func() { browser.MustClose() }
+func executeBrowserRequest(url, htmlContent string, config *RequestConfig) (*BrowserResponse, error) {
+	browser := rod.New()
+
+	err := browser.Connect()
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		if err := browser.Close(); err != nil {
+			log.Printf("Error closing browser: %v", err)
+		}
+	}()
 
 	page := browser.MustPage()
 
@@ -311,9 +331,15 @@ func setupBrowserPage(url, htmlContent string, config *RequestConfig) (*rod.Page
 
 	// Load content (URL or HTML)
 	if htmlContent != "" {
-		page.MustSetDocumentContent(htmlContent)
+		err = page.SetDocumentContent(htmlContent)
+		if err != nil {
+			return nil, err
+		}
 	} else {
-		page.MustNavigate(url)
+		err = page.Navigate(url)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Set viewport if dimensions are specified
@@ -321,122 +347,66 @@ func setupBrowserPage(url, htmlContent string, config *RequestConfig) (*rod.Page
 		page.MustSetViewport(config.ViewportWidth, config.ViewportHeight, 1.0, false)
 	}
 
-	page.MustWaitLoad()
+	err = page.WaitLoad()
+	if err != nil {
+		return nil, err
+	}
 
-	// Capture cookies using Rod's built-in API if requested
-	if config.CaptureResponse {
+	response := &BrowserResponse{}
+
+	if config.CaptureCookies {
 		if url != "" {
 			// For URL-based requests, get cookies for that specific URL
 			cookies, err := page.Cookies([]string{url})
 			if err == nil {
-				config.Cookies = cookies
+				response.Cookies = cookies
 			}
 		} else {
 			// For HTML content, get all cookies
 			cookies, err := page.Cookies([]string{})
 			if err == nil {
-				config.Cookies = cookies
+				response.Cookies = cookies
 			}
 		}
 	}
 
-	return page, cleanup, nil
-}
-
-func TakeHTMLContent(url string, config *RequestConfig) (string, error) {
-	page, cleanup, err := setupBrowserPage(url, "", config)
-	if err != nil {
-		return "", err
-	}
-	defer cleanup()
-
-	return page.MustHTML(), nil
-}
-
-func TakeHTMLContentFromHTML(htmlContent string, config *RequestConfig) (string, error) {
-	page, cleanup, err := setupBrowserPage("", htmlContent, config)
-	if err != nil {
-		return "", err
-	}
-	defer cleanup()
-
-	return page.MustHTML(), nil
-}
-
-func takeScreenshotFromHTML(htmlContent string, config *RequestConfig) ([]byte, error) {
-	page, cleanup, err := setupBrowserPage("", htmlContent, config)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
-
-	return page.Screenshot(false, &proto.PageCaptureScreenshot{
-		Format:      proto.PageCaptureScreenshotFormatPng,
-		FromSurface: true,
-	})
-}
-
-func takeScreenshot(url string, config *RequestConfig) ([]byte, error) {
-	page, cleanup, err := setupBrowserPage(url, "", config)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
-
-	return page.Screenshot(false, &proto.PageCaptureScreenshot{
-		Format:      proto.PageCaptureScreenshotFormatPng,
-		FromSurface: true,
-	})
-}
-
-func ProcessScreenshotFromHTML(htmlContent string, config *RequestConfig) ([]byte, string, error) {
-	// Take screenshot from HTML
-	img, err := takeScreenshotFromHTML(htmlContent, config)
-	if err != nil {
-		return nil, "", err
-	}
-
-	// Apply resizing if specified
-	if config.ResizeParam != "" {
-		params, err := parseResizeString(config.ResizeParam)
+	if config.CaptureScreenshot {
+		screenshot, err := page.Screenshot(false, &proto.PageCaptureScreenshot{
+			Format:      proto.PageCaptureScreenshotFormatPng,
+			FromSurface: true,
+		})
 		if err != nil {
-			return nil, "", fmt.Errorf("invalid resize parameters: %v", err)
+			return nil, err
 		}
+		response.Screenshot = screenshot
+		response.ContentType = "image/png" // Default content type
 
-		resized, format, err := resizeImage(img, params)
-		if err != nil {
-			return nil, "", fmt.Errorf("resize failed: %v", err)
+		// Apply resizing if specified
+		if config.ResizeParam != "" {
+			params, err := parseResizeString(config.ResizeParam)
+			if err != nil {
+				return nil, fmt.Errorf("invalid resize parameters: %v", err)
+			}
+
+			resized, format, err := resizeImage(response.Screenshot, params)
+			if err != nil {
+				return nil, fmt.Errorf("resize failed: %v", err)
+			}
+
+			response.Screenshot = resized
+			response.ContentType = getContentType(format)
 		}
-
-		return resized, getContentType(format), nil
 	}
 
-	return img, "image/png", nil
-}
-
-func ProcessScreenshot(url string, config *RequestConfig) ([]byte, string, error) {
-	// Take screenshot
-	img, err := takeScreenshot(url, config)
-	if err != nil {
-		return nil, "", err
+	if config.CaptureHTML {
+		html, err := page.HTML()
+		if err != nil {
+			return nil, err
+		}
+		response.HTML = &html
 	}
 
-	// Apply resizing if specified
-	if config.ResizeParam != "" {
-		params, err := parseResizeString(config.ResizeParam)
-		if err != nil {
-			return nil, "", fmt.Errorf("invalid resize parameters: %v", err)
-		}
-
-		resized, format, err := resizeImage(img, params)
-		if err != nil {
-			return nil, "", fmt.Errorf("resize failed: %v", err)
-		}
-
-		return resized, getContentType(format), nil
-	}
-
-	return img, "image/png", nil
+	return response, nil
 }
 
 func handleHTML(w http.ResponseWriter, r *http.Request) {
@@ -467,7 +437,8 @@ func handleHTML(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	html, err := TakeHTMLContent(url, config)
+	config.CaptureHTML = true
+	response, err := executeBrowserRequest(url, "", config)
 	duration := time.Since(start)
 
 	metrics.TotalDuration.Add(uint64(duration.Nanoseconds()))
@@ -480,7 +451,9 @@ func handleHTML(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Write([]byte(html))
+	if response.HTML != nil {
+		w.Write([]byte(*response.HTML))
+	}
 }
 
 func handleScreenshot(w http.ResponseWriter, r *http.Request) {
@@ -512,7 +485,8 @@ func handleScreenshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	img, contentType, err := ProcessScreenshot(url, config)
+	config.CaptureScreenshot = true
+	response, err := executeBrowserRequest(url, "", config)
 	duration := time.Since(start)
 
 	metrics.TotalDuration.Add(uint64(duration.Nanoseconds()))
@@ -524,8 +498,8 @@ func handleScreenshot(w http.ResponseWriter, r *http.Request) {
 		metrics.SuccessRequests.Add(1)
 	}
 
-	w.Header().Set("Content-Type", contentType)
-	w.Write(img)
+	w.Header().Set("Content-Type", response.ContentType)
+	w.Write(response.Screenshot)
 }
 
 func main() {
@@ -614,21 +588,25 @@ func main() {
 		}
 
 		if *htmlMode {
-			html, err := TakeHTMLContentFromHTML(htmlContent, config)
+			config.CaptureHTML = true
+			response, err := executeBrowserRequest("", htmlContent, config)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error processing HTML content: %v\n", err)
 				os.Exit(1)
 			}
 
-			fmt.Print(html)
+			if response.HTML != nil {
+				fmt.Print(*response.HTML)
+			}
 		} else {
-			img, _, err := ProcessScreenshotFromHTML(htmlContent, config)
+			config.CaptureScreenshot = true
+			response, err := executeBrowserRequest("", htmlContent, config)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error processing HTML screenshot: %v\n", err)
 				os.Exit(1)
 			}
 
-			_, err = os.Stdout.Write(img)
+			_, err = os.Stdout.Write(response.Screenshot)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error writing to stdout: %v\n", err)
 				os.Exit(1)
@@ -638,21 +616,25 @@ func main() {
 	}
 
 	if *htmlMode {
-		html, err := TakeHTMLContent(url, config)
+		config.CaptureHTML = true
+		response, err := executeBrowserRequest(url, "", config)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error processing HTML content: %v\n", err)
 			os.Exit(1)
 		}
 
-		fmt.Print(html)
+		if response.HTML != nil {
+			fmt.Print(*response.HTML)
+		}
 	} else {
-		img, _, err := ProcessScreenshot(url, config)
+		config.CaptureScreenshot = true
+		response, err := executeBrowserRequest(url, "", config)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error processing screenshot: %v\n", err)
 			os.Exit(1)
 		}
 
-		_, err = os.Stdout.Write(img)
+		_, err = os.Stdout.Write(response.Screenshot)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error writing to stdout: %v\n", err)
 			os.Exit(1)

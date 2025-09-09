@@ -261,13 +261,20 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 		ResizeParam:     args.Resize,
 		CustomHeaders:   config.Headers,
 		Debug:           false,
-		CaptureResponse: args.UpdateCookies, // Enable response capture when cookies should be updated
+		CaptureCookies:  args.UpdateCookies, // Enable cookie capture when cookies should be updated
 	}
 
 	// Take screenshot using existing sitecap functionality
-	img, contentType, err := ProcessScreenshot(args.URL, requestConfig)
+	requestConfig.CaptureScreenshot = true
+	requestConfig.CaptureHTML = true
+	response, err := executeBrowserRequest(args.URL, "", requestConfig)
 
 	// Create stored request
+	var html string
+	if response.HTML != nil {
+		html = *response.HTML
+	}
+
 	storedRequest := &StoredRequest{
 		ID:          requestID,
 		ContextName: contextName,
@@ -275,12 +282,13 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 		Timestamp:   startTime,
 		Duration:    time.Since(startTime),
 		RequestType: "screenshot",
-		Screenshot:  img,
+		Screenshot:  response.Screenshot,
+		HTML:        html,
 	}
 
 	// Convert captured cookies from Rod format to storage format
-	if len(requestConfig.Cookies) > 0 {
-		storedRequest.SetCookies = convertRodCookiesToParams(requestConfig.Cookies)
+	if len(response.Cookies) > 0 {
+		storedRequest.SetCookies = convertRodCookiesToParams(response.Cookies)
 	}
 
 	if err != nil {
@@ -310,8 +318,8 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 	result := ScreenshotResult{
 		Success:     true,
 		RequestID:   requestID,
-		Screenshot:  base64.StdEncoding.EncodeToString(img),
-		ContentType: contentType,
+		Screenshot:  base64.StdEncoding.EncodeToString(response.Screenshot),
+		ContentType: response.ContentType,
 		URL:         args.URL,
 		StatusCode:  storedRequest.StatusCode,
 		Duration:    storedRequest.Duration.Milliseconds(),
@@ -363,13 +371,20 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 		ResizeParam:     args.Resize,
 		CustomHeaders:   config.Headers,
 		Debug:           false,
-		CaptureResponse: args.UpdateCookies, // Enable response capture when cookies should be updated
+		CaptureCookies:  args.UpdateCookies, // Enable cookie capture when cookies should be updated
 	}
 
 	// Take screenshot from HTML using existing sitecap functionality
-	img, contentType, err := ProcessScreenshotFromHTML(args.HTMLContent, requestConfig)
+	requestConfig.CaptureScreenshot = true
+	requestConfig.CaptureHTML = true
+	response, err := executeBrowserRequest("", args.HTMLContent, requestConfig)
 
 	// Create stored request
+	var renderedHTML string
+	if response.HTML != nil {
+		renderedHTML = *response.HTML
+	}
+
 	storedRequest := &StoredRequest{
 		ID:          requestID,
 		ContextName: contextName,
@@ -377,13 +392,13 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 		Timestamp:   startTime,
 		Duration:    time.Since(startTime),
 		RequestType: "screenshot_html",
-		Screenshot:  img,
-		HTML:        args.HTMLContent, // Store the original HTML content
+		Screenshot:  response.Screenshot,
+		HTML:        renderedHTML, // Store the rendered HTML content (not original input)
 	}
 
 	// Convert captured cookies from Rod format to storage format
-	if len(requestConfig.Cookies) > 0 {
-		storedRequest.SetCookies = convertRodCookiesToParams(requestConfig.Cookies)
+	if len(response.Cookies) > 0 {
+		storedRequest.SetCookies = convertRodCookiesToParams(response.Cookies)
 	}
 
 	if err != nil {
@@ -413,8 +428,8 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 	result := ScreenshotResult{
 		Success:     true,
 		RequestID:   requestID,
-		Screenshot:  base64.StdEncoding.EncodeToString(img),
-		ContentType: contentType,
+		Screenshot:  base64.StdEncoding.EncodeToString(response.Screenshot),
+		ContentType: response.ContentType,
 		URL:         "(HTML content)",
 		StatusCode:  storedRequest.StatusCode,
 		Duration:    storedRequest.Duration.Milliseconds(),
@@ -464,10 +479,16 @@ func handleMCPGetHTML(ctx context.Context, request *mcp.CallToolRequest, args Ge
 		DomainWhitelist: config.DomainWhitelist,
 		CustomHeaders:   config.Headers,
 		Debug:           false,
-		CaptureResponse: args.UpdateCookies, // Enable response capture when cookies should be updated
+		CaptureCookies:  args.UpdateCookies, // Enable cookie capture when cookies should be updated
 	}
 
-	html, err := TakeHTMLContent(args.URL, requestConfig)
+	requestConfig.CaptureHTML = true
+	response, err := executeBrowserRequest(args.URL, "", requestConfig)
+
+	var html string
+	if response.HTML != nil {
+		html = *response.HTML
+	}
 
 	storedRequest := &StoredRequest{
 		ID:          requestID,
@@ -480,8 +501,8 @@ func handleMCPGetHTML(ctx context.Context, request *mcp.CallToolRequest, args Ge
 	}
 
 	// Convert captured cookies from Rod format to storage format
-	if len(requestConfig.Cookies) > 0 {
-		storedRequest.SetCookies = convertRodCookiesToParams(requestConfig.Cookies)
+	if len(response.Cookies) > 0 {
+		storedRequest.SetCookies = convertRodCookiesToParams(response.Cookies)
 	}
 
 	if err != nil {
