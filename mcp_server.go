@@ -16,8 +16,7 @@ var (
 	requestManager *RequestHistoryManager
 )
 
-// RunMCPServer starts the MCP server
-func RunMCPServer() {
+func StartMCPServer() {
 	log.Println("Starting Sitecap MCP server...")
 
 	// Initialize managers
