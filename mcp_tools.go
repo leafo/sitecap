@@ -32,7 +32,6 @@ type ConfigureContextArgs struct {
 	Cookies           []CookieInput     `json:"cookies,omitempty" jsonschema:"array of cookie objects to set in the browser context"`
 	Headers           map[string]string `json:"headers,omitempty" jsonschema:"default HTTP headers to send with all requests"`
 	UserAgent         string            `json:"user_agent,omitempty" jsonschema:"custom user agent string to use"`
-	JavaScriptEnabled *bool             `json:"javascript_enabled,omitempty" jsonschema:"enable or disable JavaScript execution (default: true)"`
 }
 
 type ScreenshotArgs struct {
@@ -191,7 +190,6 @@ func handleConfigureContext(ctx context.Context, request *mcp.CallToolRequest, a
 		Cookies:           cookies,
 		Headers:           args.Headers,
 		UserAgent:         args.UserAgent,
-		JavaScriptEnabled: args.JavaScriptEnabled == nil || *args.JavaScriptEnabled, // Default to true
 	}
 
 	// Set default headers if none provided
@@ -211,7 +209,6 @@ func handleConfigureContext(ctx context.Context, request *mcp.CallToolRequest, a
 			"domains":            len(domainWhitelist),
 			"cookies":            len(cookies),
 			"headers":            len(config.Headers),
-			"javascript_enabled": args.JavaScriptEnabled,
 		},
 	}
 

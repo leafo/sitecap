@@ -32,7 +32,6 @@ func StartMCPServer() {
 		Cookies:           []*proto.NetworkCookieParam{},
 		Headers:           map[string]string{},
 		UserAgent:         "",
-		JavaScriptEnabled: true,
 		RequestHistory:    []string{},
 	}
 	configManager.CreateOrUpdateContext("default", defaultConfig)

@@ -16,7 +16,6 @@ type BrowserContextConfig struct {
 	Cookies           []*proto.NetworkCookieParam
 	Headers           map[string]string
 	UserAgent         string
-	JavaScriptEnabled bool
 	LastRequestID     string
 	RequestHistory    []string // Request IDs in chronological order
 	CreatedAt         time.Time
@@ -97,9 +96,8 @@ func (m *ContextConfigManager) ListContexts() map[string]interface{} {
 			"request_count":      len(context.RequestHistory),
 			"viewport":           context.DefaultViewport,
 			"timeout":            context.DefaultTimeout,
-			"cookies_count":      len(context.Cookies),
-			"headers_count":      len(context.Headers),
-			"javascript_enabled": context.JavaScriptEnabled,
+			"cookies":            context.Cookies,
+			"headers":            context.Headers,
 		}
 	}
 	return result
@@ -149,7 +147,6 @@ func (m *ContextConfigManager) UpdateCookies(contextName string, newCookies []*p
 			Name:              contextName,
 			DefaultViewport:   ViewportConfig{Width: 1920, Height: 1080},
 			DefaultTimeout:    30,
-			JavaScriptEnabled: true,
 			Headers:           make(map[string]string),
 			RequestHistory:    make([]string, 0),
 			CreatedAt:         time.Now(),
