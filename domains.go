@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func parseDomainWhitelist(whitelist string) ([]string, error) {
+func ParseDomainWhitelist(whitelist string) ([]string, error) {
 	if whitelist == "" {
 		return nil, nil
 	}

@@ -97,7 +97,7 @@ func parseRequestConfig(viewportParam, resizeParam, timeoutParam, domainsParam s
 	config := &RequestConfig{}
 
 	// Parse viewport dimensions
-	viewportWidth, viewportHeight, err := parseViewportString(viewportParam)
+	viewportWidth, viewportHeight, err := ParseViewportString(viewportParam)
 	if err != nil {
 		return nil, fmt.Errorf("invalid viewport parameters: %v", err)
 	}
@@ -112,7 +112,7 @@ func parseRequestConfig(viewportParam, resizeParam, timeoutParam, domainsParam s
 	config.TimeoutSeconds = timeoutSeconds
 
 	// Parse domain whitelist
-	domainWhitelist, err := parseDomainWhitelist(domainsParam)
+	domainWhitelist, err := ParseDomainWhitelist(domainsParam)
 	if err != nil {
 		return nil, fmt.Errorf("invalid domain whitelist: %v", err)
 	}
@@ -323,7 +323,7 @@ func setupBrowserPage(url, htmlContent string, config *RequestConfig) (*rod.Page
 	return page, cleanup, nil
 }
 
-func takeHTMLContent(url string, config *RequestConfig) (string, error) {
+func TakeHTMLContent(url string, config *RequestConfig) (string, error) {
 	page, cleanup, err := setupBrowserPage(url, "", config)
 	if err != nil {
 		return "", err
@@ -333,7 +333,7 @@ func takeHTMLContent(url string, config *RequestConfig) (string, error) {
 	return page.MustHTML(), nil
 }
 
-func takeHTMLContentFromHTML(htmlContent string, config *RequestConfig) (string, error) {
+func TakeHTMLContentFromHTML(htmlContent string, config *RequestConfig) (string, error) {
 	page, cleanup, err := setupBrowserPage("", htmlContent, config)
 	if err != nil {
 		return "", err
@@ -369,7 +369,7 @@ func takeScreenshot(url string, config *RequestConfig) ([]byte, error) {
 	})
 }
 
-func processScreenshotFromHTML(htmlContent string, config *RequestConfig) ([]byte, string, error) {
+func ProcessScreenshotFromHTML(htmlContent string, config *RequestConfig) ([]byte, string, error) {
 	// Take screenshot from HTML
 	img, err := takeScreenshotFromHTML(htmlContent, config)
 	if err != nil {
@@ -394,7 +394,7 @@ func processScreenshotFromHTML(htmlContent string, config *RequestConfig) ([]byt
 	return img, "image/png", nil
 }
 
-func processScreenshot(url string, config *RequestConfig) ([]byte, string, error) {
+func ProcessScreenshot(url string, config *RequestConfig) ([]byte, string, error) {
 	// Take screenshot
 	img, err := takeScreenshot(url, config)
 	if err != nil {
@@ -447,7 +447,7 @@ func handleHTML(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	html, err := takeHTMLContent(url, config)
+	html, err := TakeHTMLContent(url, config)
 	duration := time.Since(start)
 
 	metrics.TotalDuration.Add(uint64(duration.Nanoseconds()))
@@ -492,7 +492,7 @@ func handleScreenshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	img, contentType, err := processScreenshot(url, config)
+	img, contentType, err := ProcessScreenshot(url, config)
 	duration := time.Since(start)
 
 	metrics.TotalDuration.Add(uint64(duration.Nanoseconds()))
@@ -510,6 +510,7 @@ func handleScreenshot(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	httpMode := flag.Bool("http", false, "Start HTTP server mode")
+	mcpMode := flag.Bool("mcp", false, "Start MCP (Model Context Protocol) server mode")
 	htmlMode := flag.Bool("html", false, "Output HTML content instead of screenshot")
 	listen := flag.String("listen", "localhost:8080", "Address to listen on for HTTP server")
 	viewport := flag.String("viewport", "", "Viewport dimensions for the browser (e.g. 1920x1080)")
@@ -529,6 +530,11 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing headers: %v\n", err)
 		os.Exit(1)
+	}
+
+	if *mcpMode {
+		RunMCPServer()
+		return
 	}
 
 	if *httpMode {
@@ -553,8 +559,9 @@ func main() {
 	}
 
 	if len(flag.Args()) != 1 {
-		fmt.Fprintf(os.Stderr, "Usage: %s [--viewport WxH] [--resize WxH] [--timeout N] [--domains list] [--headers JSON] [--debug] [--http] [--html] <URL>\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [--viewport WxH] [--resize WxH] [--timeout N] [--domains list] [--headers JSON] [--debug] [--http] [--mcp] [--html] <URL>\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "       %s [options] - < input.html   (use '-' to read HTML from stdin)\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "       %s --mcp   (start MCP server for Model Context Protocol)\n", os.Args[0])
 		os.Exit(1)
 	}
 
@@ -587,7 +594,7 @@ func main() {
 		}
 
 		if *htmlMode {
-			html, err := takeHTMLContentFromHTML(htmlContent, config)
+			html, err := TakeHTMLContentFromHTML(htmlContent, config)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error processing HTML content: %v\n", err)
 				os.Exit(1)
@@ -595,7 +602,7 @@ func main() {
 
 			fmt.Print(html)
 		} else {
-			img, _, err := processScreenshotFromHTML(htmlContent, config)
+			img, _, err := ProcessScreenshotFromHTML(htmlContent, config)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error processing HTML screenshot: %v\n", err)
 				os.Exit(1)
@@ -611,7 +618,7 @@ func main() {
 	}
 
 	if *htmlMode {
-		html, err := takeHTMLContent(url, config)
+		html, err := TakeHTMLContent(url, config)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error processing HTML content: %v\n", err)
 			os.Exit(1)
@@ -619,7 +626,7 @@ func main() {
 
 		fmt.Print(html)
 	} else {
-		img, _, err := processScreenshot(url, config)
+		img, _, err := ProcessScreenshot(url, config)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error processing screenshot: %v\n", err)
 			os.Exit(1)

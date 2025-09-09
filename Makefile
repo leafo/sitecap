@@ -1,4 +1,4 @@
-.PHONY: build install run test test_html
+.PHONY: build install run test test_html test_mcp
 
 build:
 	go build -o sitecap
@@ -11,6 +11,10 @@ test:
 
 test_html:
 	echo "<html><head><title>Test</title></head><body><h1>Hello World</h1><img src='https://static.itch.io/images/app/collections@2x.png' /></body></html>" | ./sitecap --debug - | feh -
+
+
+test_mcp: build
+	npx @modelcontextprotocol/inspector ./sitecap  -mcp
 
 install:
 	GONOPROXY=github.com/leafo/sitecap go install github.com/leafo/sitecap@latest

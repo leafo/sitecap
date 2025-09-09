@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func parseViewportString(viewport string) (int, int, error) {
+func ParseViewportString(viewport string) (int, int, error) {
 	if viewport == "" {
 		return 0, 0, nil
 	}
