@@ -22,6 +22,19 @@ type BrowserContextConfig struct {
 	mutex           sync.RWMutex
 }
 
+// TODO this should pull defaults from command line flags
+func DefaultBrowserContextConfig() *BrowserContextConfig {
+	return &BrowserContextConfig{
+		Name:            "default",
+		DefaultViewport: ViewportConfig{Width: 1366, Height: 854},
+		DefaultTimeout:  30,
+		DomainWhitelist: []string{},
+		Cookies:         []*proto.NetworkCookieParam{},
+		Headers:         map[string]string{},
+		RequestHistory:  []string{},
+	}
+}
+
 // ViewportConfig represents viewport dimensions
 type ViewportConfig struct {
 	Width  int `json:"width"`
@@ -84,18 +97,7 @@ func NewContextConfigManager() *ContextConfigManager {
 		contexts: make(map[string]*BrowserContextConfig),
 	}
 
-	// create a "default" context
-	// TODO this should pull defaults from command line flags
-	defaultConfig := &BrowserContextConfig{
-		Name:            "default",
-		DefaultViewport: ViewportConfig{Width: 1920, Height: 1080},
-		DefaultTimeout:  30,
-		DomainWhitelist: []string{},
-		Cookies:         []*proto.NetworkCookieParam{},
-		Headers:         map[string]string{},
-		RequestHistory:  []string{},
-	}
-	context_manager.CreateOrUpdateContext("default", defaultConfig)
+	context_manager.CreateOrUpdateContext("default", DefaultBrowserContextConfig())
 
 	return context_manager
 }
