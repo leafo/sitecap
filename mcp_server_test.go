@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -53,14 +52,10 @@ func validateImageContent(t *testing.T, imageContent *mcp.ImageContent) {
 		return
 	}
 
-	// Decode base64 image data
-	imageBytes, err := base64.StdEncoding.DecodeString(string(imageContent.Data))
-	if err != nil {
-		t.Errorf("Failed to decode base64 image data: %v", err)
-		return
-	}
+	// Use image data directly (already raw bytes, not base64)
+	imageBytes := imageContent.Data
 
-	// Create reader from decoded bytes
+	// Create reader from image bytes
 	reader := bytes.NewReader(imageBytes)
 
 	// Decode the image to verify it's valid and get dimensions

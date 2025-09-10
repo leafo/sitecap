@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
@@ -73,7 +72,6 @@ type ConfigureContextResult struct {
 type ScreenshotResult struct {
 	Success     bool   `json:"success"`
 	RequestID   string `json:"request_id"`
-	Screenshot  string `json:"screenshot"`
 	ContentType string `json:"content_type"`
 	URL         string `json:"url"`
 	Duration    int64  `json:"duration_ms"`
@@ -272,7 +270,6 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 	result := ScreenshotResult{
 		Success:     true,
 		RequestID:   entry.ID,
-		Screenshot:  base64.StdEncoding.EncodeToString(response.Screenshot),
 		ContentType: response.ContentType,
 		URL:         args.URL,
 		Duration:    entry.Duration.Milliseconds(),
@@ -281,7 +278,7 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.ImageContent{
-				Data:     []byte(result.Screenshot),
+				Data:     []byte(response.Screenshot),
 				MIMEType: response.ContentType,
 			},
 		},
@@ -348,7 +345,6 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 	result := ScreenshotResult{
 		Success:     true,
 		RequestID:   entry.ID,
-		Screenshot:  base64.StdEncoding.EncodeToString(response.Screenshot),
 		ContentType: response.ContentType,
 		URL:         "(HTML content)",
 		Duration:    entry.Duration.Milliseconds(),
@@ -357,7 +353,7 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.ImageContent{
-				Data:     []byte(result.Screenshot),
+				Data:     []byte(response.Screenshot),
 				MIMEType: response.ContentType,
 			},
 		},
