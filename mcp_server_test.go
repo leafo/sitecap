@@ -706,7 +706,6 @@ func TestMCPServerContextCookieTransmission(t *testing.T) {
 
 	// Parse the HTML from the /cookies endpoint to verify our cookies were sent
 	htmlContent := *lastRequest.Response.HTML
-	t.Logf("Received HTML from /cookies endpoint:\n%s", htmlContent)
 
 	// Expected cookies that should appear in the HTML
 	expectedCookies := []struct {
