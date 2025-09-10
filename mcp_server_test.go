@@ -771,3 +771,377 @@ func TestMCPServerContextCookieTransmission(t *testing.T) {
 	cancel()
 	wg.Wait()
 }
+
+// TestMCPServerConfigureContextPartialUpdate tests the new fetch-or-create logic for context configuration
+func TestMCPServerConfigureContextPartialUpdate(t *testing.T) {
+	// Setup MCP server for testing
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	server := setupTestServer()
+
+	// Run server in background
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		err := server.Run(ctx, serverTransport)
+		if err != nil && err != context.Canceled {
+			t.Errorf("Server run error: %v", err)
+		}
+	}()
+
+	// Create client and connect to server
+	client := mcp.NewClient(&mcp.Implementation{
+		Name:    "test-client",
+		Version: "1.0.0",
+	}, nil)
+
+	session, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatalf("Failed to connect client to server: %v", err)
+	}
+	defer session.Close()
+
+	testContextName := "partial_update_test"
+
+	// Step 1: Create new context with only viewport specified
+	_, err = session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "configure_browser_context",
+		Arguments: map[string]interface{}{
+			"context_name": testContextName,
+			"viewport":     "1920x1080",
+			// timeout, domains, cookies, headers are nil - should use defaults
+		},
+	})
+	if err != nil {
+		t.Fatalf("First configure_browser_context call failed: %v", err)
+	}
+
+	// Verify context was created with defaults for unspecified fields
+	config1, exists := configManager.GetContext(testContextName)
+	if !exists {
+		t.Fatal("Expected context to be created")
+	}
+
+	// Check viewport was set
+	if config1.DefaultViewport.Width != 1920 || config1.DefaultViewport.Height != 1080 {
+		t.Errorf("Expected viewport 1920x1080, got %dx%d", config1.DefaultViewport.Width, config1.DefaultViewport.Height)
+	}
+
+	// Check defaults were used for unspecified fields
+	defaultConfig := DefaultBrowserContextConfig()
+	if config1.DefaultTimeout != defaultConfig.DefaultTimeout {
+		t.Errorf("Expected default timeout %d, got %d", defaultConfig.DefaultTimeout, config1.DefaultTimeout)
+	}
+
+	// Step 2: Update same context with only timeout specified
+	_, err = session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "configure_browser_context",
+		Arguments: map[string]interface{}{
+			"context_name": testContextName,
+			"timeout":      60,
+			// viewport, domains, cookies, headers are nil - should preserve existing values
+		},
+	})
+	if err != nil {
+		t.Fatalf("Second configure_browser_context call failed: %v", err)
+	}
+
+	// Verify context was updated
+	config2, exists := configManager.GetContext(testContextName)
+	if !exists {
+		t.Fatal("Expected context to still exist")
+	}
+
+	// Check that timeout was updated
+	if config2.DefaultTimeout != 60 {
+		t.Errorf("Expected timeout to be updated to 60, got %d", config2.DefaultTimeout)
+	}
+
+	// Check that viewport was preserved
+	if config2.DefaultViewport.Width != 1920 || config2.DefaultViewport.Height != 1080 {
+		t.Errorf("Expected viewport to be preserved as 1920x1080, got %dx%d", config2.DefaultViewport.Width, config2.DefaultViewport.Height)
+	}
+
+	// Step 3: Test with empty context name (should use "default")
+	_, err = session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "configure_browser_context",
+		Arguments: map[string]interface{}{
+			"viewport": "800x600",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Third configure_browser_context call failed: %v", err)
+	}
+
+	// Verify default context was updated
+	defaultContext, exists := configManager.GetContext("default")
+	if !exists {
+		t.Fatal("Expected default context to exist")
+	}
+	if defaultContext.DefaultViewport.Width != 800 || defaultContext.DefaultViewport.Height != 600 {
+		t.Errorf("Expected default context viewport 800x600, got %dx%d", defaultContext.DefaultViewport.Width, defaultContext.DefaultViewport.Height)
+	}
+
+	// Stop server
+	cancel()
+	wg.Wait()
+}
+
+// TestMCPServerConfigureContextNullableFields tests individual nullable field handling
+func TestMCPServerConfigureContextNullableFields(t *testing.T) {
+	// Setup MCP server for testing
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	server := setupTestServer()
+
+	// Run server in background
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		err := server.Run(ctx, serverTransport)
+		if err != nil && err != context.Canceled {
+			t.Errorf("Server run error: %v", err)
+		}
+	}()
+
+	// Create client and connect to server
+	client := mcp.NewClient(&mcp.Implementation{
+		Name:    "test-client",
+		Version: "1.0.0",
+	}, nil)
+
+	session, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatalf("Failed to connect client to server: %v", err)
+	}
+	defer session.Close()
+
+	testContextName := "nullable_fields_test"
+
+	// Create initial context with all fields
+	_, err = session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "configure_browser_context",
+		Arguments: map[string]interface{}{
+			"context_name": testContextName,
+			"viewport":     "1024x768",
+			"timeout":      45,
+			"domains":      "initial.com",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Initial configure_browser_context call failed: %v", err)
+	}
+
+	// Test: Call with no nullable fields specified - should preserve all existing values
+	_, err = session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "configure_browser_context",
+		Arguments: map[string]interface{}{
+			"context_name": testContextName,
+			// All nullable fields omitted
+		},
+	})
+	if err != nil {
+		t.Fatalf("Preserve test configure_browser_context call failed: %v", err)
+	}
+
+	preservedConfig, _ := configManager.GetContext(testContextName)
+	if preservedConfig.DefaultViewport.Width != 1024 || preservedConfig.DefaultViewport.Height != 768 {
+		t.Errorf("Expected preserved viewport 1024x768, got %dx%d", preservedConfig.DefaultViewport.Width, preservedConfig.DefaultViewport.Height)
+	}
+	if preservedConfig.DefaultTimeout != 45 {
+		t.Errorf("Expected preserved timeout 45, got %d", preservedConfig.DefaultTimeout)
+	}
+	if len(preservedConfig.DomainWhitelist) != 1 || preservedConfig.DomainWhitelist[0] != "initial.com" {
+		t.Errorf("Expected preserved domains [initial.com], got %v", preservedConfig.DomainWhitelist)
+	}
+
+	// Stop server
+	cancel()
+	wg.Wait()
+}
+
+// TestMCPServerConfigureClearVsPreserveSemantics tests the distinction between clearing and preserving fields
+func TestMCPServerConfigureClearVsPreserveSemantics(t *testing.T) {
+	// Setup MCP server for testing
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	server := setupTestServer()
+
+	// Run server in background
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		err := server.Run(ctx, serverTransport)
+		if err != nil && err != context.Canceled {
+			t.Errorf("Server run error: %v", err)
+		}
+	}()
+
+	// Create client and connect to server
+	client := mcp.NewClient(&mcp.Implementation{
+		Name:    "test-client",
+		Version: "1.0.0",
+	}, nil)
+
+	session, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatalf("Failed to connect client to server: %v", err)
+	}
+	defer session.Close()
+
+	testContextName := "clear_vs_preserve_test"
+
+	// Step 1: Create context with all fields populated
+	_, err = session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "configure_browser_context",
+		Arguments: map[string]interface{}{
+			"context_name": testContextName,
+			"viewport":     "1024x768",
+			"timeout":      45,
+			"domains":      "example.com,test.com",
+			"cookies": []interface{}{
+				map[string]interface{}{
+					"name":  "test_cookie",
+					"value": "test_value",
+				},
+			},
+			"headers": map[string]interface{}{
+				"Authorization": "Bearer token",
+				"Custom-Header": "custom-value",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Initial setup configure_browser_context call failed: %v", err)
+	}
+
+	// Verify initial state
+	_, exists := configManager.GetContext(testContextName)
+	if !exists {
+		t.Fatal("Expected context to exist after creation")
+	}
+
+	// Step 2: Test clearing cookies with empty slice
+	_, err = session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "configure_browser_context",
+		Arguments: map[string]interface{}{
+			"context_name": testContextName,
+			"cookies":      []interface{}{}, // Empty slice should clear cookies
+		},
+	})
+	if err != nil {
+		t.Fatalf("Clear cookies configure_browser_context call failed: %v", err)
+	}
+
+	configAfterClearCookies, _ := configManager.GetContext(testContextName)
+	if len(configAfterClearCookies.Cookies) > 0 {
+		t.Errorf("Expected cookies to be cleared (nil), got %v", configAfterClearCookies.Cookies)
+	}
+
+	// Verify other fields were preserved
+	if configAfterClearCookies.DefaultTimeout != 45 {
+		t.Errorf("Expected timeout to be preserved as 45, got %d", configAfterClearCookies.DefaultTimeout)
+	}
+	if len(configAfterClearCookies.DomainWhitelist) != 2 {
+		t.Errorf("Expected domains to be preserved as 2 entries, got %d", len(configAfterClearCookies.DomainWhitelist))
+	}
+
+	// Step 3: Test clearing domains with empty string
+	_, err = session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "configure_browser_context",
+		Arguments: map[string]interface{}{
+			"context_name": testContextName,
+			"domains":      "", // Empty string should clear domains
+		},
+	})
+	if err != nil {
+		t.Fatalf("Clear domains configure_browser_context call failed: %v", err)
+	}
+
+	configAfterClearDomains, _ := configManager.GetContext(testContextName)
+	if configAfterClearDomains.DomainWhitelist != nil {
+		t.Errorf("Expected domains to be cleared (nil), got %v", configAfterClearDomains.DomainWhitelist)
+	}
+
+	// Verify timeout was still preserved
+	if configAfterClearDomains.DefaultTimeout != 45 {
+		t.Errorf("Expected timeout to still be preserved as 45, got %d", configAfterClearDomains.DefaultTimeout)
+	}
+
+	// Step 4: Test clearing headers with empty map
+	_, err = session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "configure_browser_context",
+		Arguments: map[string]interface{}{
+			"context_name": testContextName,
+			"headers":      map[string]interface{}{}, // Empty map should clear headers
+		},
+	})
+	if err != nil {
+		t.Fatalf("Clear headers configure_browser_context call failed: %v", err)
+	}
+
+	configAfterClearHeaders, _ := configManager.GetContext(testContextName)
+	if len(configAfterClearHeaders.Headers) != 0 {
+		t.Errorf("Expected headers to be cleared (empty map), got %v", configAfterClearHeaders.Headers)
+	}
+
+	// Step 5: Test preserving existing values by omitting fields entirely
+	// First, repopulate some fields
+	_, err = session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "configure_browser_context",
+		Arguments: map[string]interface{}{
+			"context_name": testContextName,
+			"domains":      "newdomain.com",
+			"cookies": []interface{}{
+				map[string]interface{}{
+					"name":  "new_cookie",
+					"value": "new_value",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Repopulate configure_browser_context call failed: %v", err)
+	}
+
+	// Now test preservation by omitting all nullable fields
+	_, err = session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "configure_browser_context",
+		Arguments: map[string]interface{}{
+			"context_name": testContextName,
+			// All nullable fields omitted - should preserve existing values
+		},
+	})
+	if err != nil {
+		t.Fatalf("Preserve test configure_browser_context call failed: %v", err)
+	}
+
+	finalConfig, _ := configManager.GetContext(testContextName)
+
+	// Verify all values were preserved
+	if len(finalConfig.DomainWhitelist) != 1 || finalConfig.DomainWhitelist[0] != "newdomain.com" {
+		t.Errorf("Expected domains to be preserved as [newdomain.com], got %v", finalConfig.DomainWhitelist)
+	}
+	if finalConfig.Cookies == nil || len(finalConfig.Cookies) != 1 {
+		t.Errorf("Expected cookies to be preserved with 1 entry, got %v", finalConfig.Cookies)
+	}
+	if finalConfig.DefaultTimeout != 45 {
+		t.Errorf("Expected timeout to be preserved as 45, got %d", finalConfig.DefaultTimeout)
+	}
+
+	// Stop server
+	cancel()
+	wg.Wait()
+}

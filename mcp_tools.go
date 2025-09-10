@@ -25,9 +25,9 @@ type CookieInput struct {
 
 type ConfigureContextArgs struct {
 	ContextName string            `json:"context_name,omitempty" jsonschema:"name of the browser context (default: 'default')"`
-	Viewport    string            `json:"viewport,omitempty" jsonschema:"viewport dimensions like '1920x1080' (default: '1920x1080')"`
-	Timeout     int               `json:"timeout,omitempty" jsonschema:"timeout in seconds for page loads (default: 30)"`
-	Domains     string            `json:"domains,omitempty" jsonschema:"comma-separated list of allowed domains for request filtering"`
+	Viewport    *string           `json:"viewport,omitempty" jsonschema:"viewport dimensions like '1920x1080' (default: '1920x1080')"`
+	Timeout     *int              `json:"timeout,omitempty" jsonschema:"timeout in seconds for page loads (default: 30)"`
+	Domains     *string           `json:"domains,omitempty" jsonschema:"comma-separated list of allowed domains for request filtering"`
 	Cookies     []CookieInput     `json:"cookies,omitempty" jsonschema:"array of cookie objects to set in the browser context"`
 	Headers     map[string]string `json:"headers,omitempty" jsonschema:"default HTTP headers to send with all requests"`
 }
@@ -145,66 +145,73 @@ func convertRodCookiesToParams(rodCookies []*proto.NetworkCookie) []*proto.Netwo
 // Tool handlers with proper MCP signatures
 
 func handleConfigureContext(ctx context.Context, request *mcp.CallToolRequest, args ConfigureContextArgs) (*mcp.CallToolResult, ConfigureContextResult, error) {
-	// Set defaults
-	if args.ContextName == "" {
-		args.ContextName = "default"
-	}
-	if args.Timeout == 0 {
-		args.Timeout = 30
-	}
-	if args.Viewport == "" {
-		args.Viewport = "1920x1080"
+	// Set default context name
+	contextName := args.ContextName
+	if contextName == "" {
+		contextName = "default"
 	}
 
-	// Parse viewport
-	viewportWidth, viewportHeight, err := ParseViewportString(args.Viewport)
-	if err != nil {
-		return newErrorResult[ConfigureContextResult](fmt.Errorf("invalid viewport: %v", err))
+	// Fetch existing context or create new default
+	config, exists := configManager.GetContext(contextName)
+	if !exists {
+		config = DefaultBrowserContextConfig()
+		config.Name = contextName
 	}
 
-	// Parse domain whitelist
-	domainWhitelist, err := ParseDomainWhitelist(args.Domains)
-	if err != nil {
-		return newErrorResult[ConfigureContextResult](fmt.Errorf("invalid domains: %v", err))
-	}
-
-	// Parse cookies
-	var cookies []*proto.NetworkCookieParam
-	if len(args.Cookies) > 0 {
-		cookies = convertCookieInputs(args.Cookies)
-	}
-
-	// Create context configuration
-	config := &BrowserContextConfig{
-		Name: args.ContextName,
-		DefaultViewport: ViewportConfig{
+	// Conditionally update viewport if provided
+	if args.Viewport != nil {
+		viewportWidth, viewportHeight, err := ParseViewportString(*args.Viewport)
+		if err != nil {
+			return newErrorResult[ConfigureContextResult](fmt.Errorf("invalid viewport: %v", err))
+		}
+		config.DefaultViewport = ViewportConfig{
 			Width:  viewportWidth,
 			Height: viewportHeight,
-		},
-		DefaultTimeout:  args.Timeout,
-		DomainWhitelist: domainWhitelist,
-		Cookies:         cookies,
-		Headers:         args.Headers,
+		}
 	}
 
-	// Set default headers if none provided
-	if config.Headers == nil {
-		config.Headers = make(map[string]string)
+	// Conditionally update timeout if provided
+	if args.Timeout != nil {
+		config.DefaultTimeout = *args.Timeout
 	}
 
-	configManager.CreateOrUpdateContext(args.ContextName, config)
+	// Conditionally update domain whitelist if provided
+	if args.Domains != nil {
+		domainWhitelist, err := ParseDomainWhitelist(*args.Domains)
+		if err != nil {
+			return newErrorResult[ConfigureContextResult](fmt.Errorf("invalid domains: %v", err))
+		}
+		config.DomainWhitelist = domainWhitelist
+	}
+
+	// Conditionally update cookies if provided
+	if args.Cookies != nil {
+		cookies := convertCookieInputs(args.Cookies)
+		config.Cookies = cookies
+	}
+
+	// Conditionally update headers if provided
+	if args.Headers != nil {
+		config.Headers = args.Headers
+	}
+
+	// Store the updated context
+	configManager.CreateOrUpdateContext(contextName, config)
+
+	// Build result configuration for response
+	resultConfig := map[string]interface{}{
+		"viewport": fmt.Sprintf("%dx%d", config.DefaultViewport.Width, config.DefaultViewport.Height),
+		"timeout":  config.DefaultTimeout,
+		"domains":  config.DomainWhitelist,
+		"cookies":  config.Cookies,
+		"headers":  config.Headers,
+	}
 
 	result := ConfigureContextResult{
 		Success:     true,
-		ContextName: args.ContextName,
+		ContextName: contextName,
 		Message:     "Context configured successfully",
-		Config: map[string]interface{}{
-			"viewport": args.Viewport,
-			"timeout":  args.Timeout,
-			"domains":  len(domainWhitelist),
-			"cookies":  len(cookies),
-			"headers":  len(config.Headers),
-		},
+		Config:      resultConfig,
 	}
 
 	return &mcp.CallToolResult{}, result, nil
@@ -512,7 +519,22 @@ func handleGetLastRequest(ctx context.Context, request *mcp.CallToolRequest, arg
 		}
 
 		if args.IncludeNetwork {
-			result["network_requests"] = lastRequest.Response.NetworkRequests
+			// Create a sanitized version of network requests without headers to reduce bloat
+			sanitizedRequests := make([]map[string]interface{}, len(lastRequest.Response.NetworkRequests))
+			for i, req := range lastRequest.Response.NetworkRequests {
+				sanitizedRequests[i] = map[string]interface{}{
+					"url":         req.URL,
+					"method":      req.Method,
+					"status_code": req.StatusCode,
+					"duration_ms": req.Duration,
+					"timestamp":   req.Timestamp,
+					"failed":      req.Failed,
+				}
+				if req.ErrorText != "" {
+					sanitizedRequests[i]["error_text"] = req.ErrorText
+				}
+			}
+			result["network_requests"] = sanitizedRequests
 		}
 
 		if args.IncludeConsole {
