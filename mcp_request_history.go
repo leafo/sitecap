@@ -82,64 +82,6 @@ func (m *RequestHistoryManager) GetLastRequest(contextName string, configManager
 	return m.GetRequest(lastRequestID)
 }
 
-// CreateRequestResponse creates a response structure for MCP calls
-func (m *RequestHistoryManager) CreateRequestResponse(entry *RequestHistoryEntry, includeHTML, includeNetwork, includeConsole bool) map[string]interface{} {
-	response := map[string]interface{}{
-		"id":           entry.ID,
-		"context_name": entry.ContextName,
-		"url":          entry.URL,
-		"timestamp":    entry.Timestamp,
-		"duration":     entry.Duration.Milliseconds(),
-		"request_type": entry.RequestType,
-	}
-
-	// Include input HTML if present
-	if entry.InputHTML != "" {
-		response["input_html"] = entry.InputHTML
-	}
-
-	if entry.Error != "" {
-		response["error"] = entry.Error
-		return response
-	}
-
-	// Extract information from the BrowserResponse
-	if entry.Response != nil {
-
-		// Convert cookies to expected format
-		if len(entry.Response.Cookies) > 0 {
-			cookies := make([]map[string]interface{}, len(entry.Response.Cookies))
-			for i, cookie := range entry.Response.Cookies {
-				cookies[i] = map[string]interface{}{
-					"name":     cookie.Name,
-					"value":    cookie.Value,
-					"domain":   cookie.Domain,
-					"path":     cookie.Path,
-					"expires":  cookie.Expires,
-					"httpOnly": cookie.HTTPOnly,
-					"secure":   cookie.Secure,
-					"sameSite": cookie.SameSite,
-				}
-			}
-			response["set_cookies"] = cookies
-		}
-
-		if includeHTML && entry.Response.HTML != nil {
-			response["html"] = *entry.Response.HTML
-		}
-
-		if includeNetwork {
-			response["network_requests"] = entry.Response.NetworkRequests
-		}
-
-		if includeConsole {
-			response["console_logs"] = entry.Response.ConsoleLogs
-		}
-	}
-
-	return response
-}
-
 func generateRequestID() string {
 	timestamp := time.Now().Format("20060102150405")
 

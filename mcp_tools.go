@@ -76,10 +76,20 @@ type ScreenshotResult struct {
 	Screenshot  string `json:"screenshot"`
 	ContentType string `json:"content_type"`
 	URL         string `json:"url"`
-	Duration    int64  `json:"duration"`
+	Duration    int64  `json:"duration_ms"`
 }
 
 // Helper functions
+
+func newErrorResult[T any](err error) (*mcp.CallToolResult, T, error) {
+	var zeroValue T
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: err.Error()},
+		},
+		IsError: true,
+	}, zeroValue, err
+}
 
 func convertCookieInputs(inputs []CookieInput) []*proto.NetworkCookieParam {
 	cookies := make([]*proto.NetworkCookieParam, len(inputs))
@@ -151,23 +161,13 @@ func handleConfigureContext(ctx context.Context, request *mcp.CallToolRequest, a
 	// Parse viewport
 	viewportWidth, viewportHeight, err := ParseViewportString(args.Viewport)
 	if err != nil {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: fmt.Sprintf("Invalid viewport: %v", err)},
-			},
-			IsError: true,
-		}, ConfigureContextResult{}, fmt.Errorf("invalid viewport: %v", err)
+		return newErrorResult[ConfigureContextResult](fmt.Errorf("invalid viewport: %v", err))
 	}
 
 	// Parse domain whitelist
 	domainWhitelist, err := ParseDomainWhitelist(args.Domains)
 	if err != nil {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: fmt.Sprintf("Invalid domains: %v", err)},
-			},
-			IsError: true,
-		}, ConfigureContextResult{}, fmt.Errorf("invalid domains: %v", err)
+		return newErrorResult[ConfigureContextResult](fmt.Errorf("invalid domains: %v", err))
 	}
 
 	// Parse cookies
@@ -209,21 +209,12 @@ func handleConfigureContext(ctx context.Context, request *mcp.CallToolRequest, a
 		},
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: "Context configured successfully"},
-		},
-	}, result, nil
+	return &mcp.CallToolResult{}, result, nil
 }
 
 func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args ScreenshotArgs) (*mcp.CallToolResult, ScreenshotResult, error) {
 	if args.URL == "" {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: "URL is required"},
-			},
-			IsError: true,
-		}, ScreenshotResult{}, fmt.Errorf("URL is required")
+		return newErrorResult[ScreenshotResult](fmt.Errorf("URL is required"))
 	}
 
 	// Get context configuration
@@ -234,12 +225,7 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 
 	config, exists := configManager.GetContext(contextName)
 	if !exists {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: fmt.Sprintf("Context not found: %s", contextName)},
-			},
-			IsError: true,
-		}, ScreenshotResult{}, fmt.Errorf("context not found: %s", contextName)
+		return newErrorResult[ScreenshotResult](fmt.Errorf("context not found: %s", contextName))
 	}
 
 	startTime := time.Now()
@@ -270,12 +256,7 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 		requestManager.StoreRequest(entry)
 		config.AddRequestToHistory(entry.ID)
 
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: fmt.Sprintf("Screenshot failed: %v", err)},
-			},
-			IsError: true,
-		}, ScreenshotResult{}, fmt.Errorf("screenshot failed: %v", err)
+		return newErrorResult[ScreenshotResult](fmt.Errorf("screenshot failed: %v", err))
 	}
 
 	// Handle cookie updates if requested
@@ -299,19 +280,17 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
-			&mcp.TextContent{Text: "Screenshot captured successfully"},
+			&mcp.ImageContent{
+				Data:     []byte(result.Screenshot),
+				MIMEType: response.ContentType,
+			},
 		},
 	}, result, nil
 }
 
 func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, args ScreenshotHTMLArgs) (*mcp.CallToolResult, ScreenshotResult, error) {
 	if args.HTMLContent == "" {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: "HTML content is required"},
-			},
-			IsError: true,
-		}, ScreenshotResult{}, fmt.Errorf("HTML content is required")
+		return newErrorResult[ScreenshotResult](fmt.Errorf("HTML content is required"))
 	}
 
 	// Get context configuration
@@ -322,12 +301,7 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 
 	config, exists := configManager.GetContext(contextName)
 	if !exists {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: fmt.Sprintf("Context not found: %s", contextName)},
-			},
-			IsError: true,
-		}, ScreenshotResult{}, fmt.Errorf("context not found: %s", contextName)
+		return newErrorResult[ScreenshotResult](fmt.Errorf("context not found: %s", contextName))
 	}
 
 	startTime := time.Now()
@@ -358,12 +332,7 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 		requestManager.StoreRequest(entry)
 		config.AddRequestToHistory(entry.ID)
 
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: fmt.Sprintf("HTML screenshot failed: %v", err)},
-			},
-			IsError: true,
-		}, ScreenshotResult{}, fmt.Errorf("HTML screenshot failed: %v", err)
+		return newErrorResult[ScreenshotResult](fmt.Errorf("HTML screenshot failed: %v", err))
 	}
 
 	// Handle cookie updates if requested (though less relevant for HTML content)
@@ -387,19 +356,17 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
-			&mcp.TextContent{Text: "HTML screenshot captured successfully"},
+			&mcp.ImageContent{
+				Data:     []byte(result.Screenshot),
+				MIMEType: response.ContentType,
+			},
 		},
 	}, result, nil
 }
 
 func handleMCPGetHTML(ctx context.Context, request *mcp.CallToolRequest, args GetHTMLArgs) (*mcp.CallToolResult, map[string]interface{}, error) {
 	if args.URL == "" {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: "URL is required"},
-			},
-			IsError: true,
-		}, nil, fmt.Errorf("URL is required")
+		return newErrorResult[map[string]interface{}](fmt.Errorf("URL is required"))
 	}
 
 	// Get context configuration
@@ -410,12 +377,7 @@ func handleMCPGetHTML(ctx context.Context, request *mcp.CallToolRequest, args Ge
 
 	config, exists := configManager.GetContext(contextName)
 	if !exists {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: fmt.Sprintf("Context not found: %s", contextName)},
-			},
-			IsError: true,
-		}, nil, fmt.Errorf("context not found: %s", contextName)
+		return newErrorResult[map[string]interface{}](fmt.Errorf("context not found: %s", contextName))
 	}
 
 	startTime := time.Now()
@@ -443,12 +405,7 @@ func handleMCPGetHTML(ctx context.Context, request *mcp.CallToolRequest, args Ge
 		requestManager.StoreRequest(entry)
 		config.AddRequestToHistory(entry.ID)
 
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: fmt.Sprintf("Get HTML failed: %v", err)},
-			},
-			IsError: true,
-		}, nil, fmt.Errorf("get HTML failed: %v", err)
+		return newErrorResult[map[string]interface{}](fmt.Errorf("get HTML failed: %v", err))
 	}
 
 	// Handle cookie updates if requested
@@ -467,16 +424,16 @@ func handleMCPGetHTML(ctx context.Context, request *mcp.CallToolRequest, args Ge
 	}
 
 	result := map[string]interface{}{
-		"success":    true,
-		"request_id": entry.ID,
-		"html":       html,
-		"url":        args.URL,
-		"duration":   entry.Duration.Milliseconds(),
+		"success":     true,
+		"request_id":  entry.ID,
+		"html":        html,
+		"url":         args.URL,
+		"duration_ms": entry.Duration.Milliseconds(),
 	}
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
-			&mcp.TextContent{Text: "HTML extracted successfully"},
+			&mcp.TextContent{Text: html},
 		},
 	}, result, nil
 }
@@ -490,11 +447,7 @@ func handleListContexts(ctx context.Context, request *mcp.CallToolRequest, args 
 		"count":    len(contexts),
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Found %d contexts", len(contexts))},
-		},
-	}, result, nil
+	return &mcp.CallToolResult{}, result, nil
 }
 
 func handleGetLastRequest(ctx context.Context, request *mcp.CallToolRequest, args GetLastRequestArgs) (*mcp.CallToolResult, map[string]interface{}, error) {
@@ -507,34 +460,69 @@ func handleGetLastRequest(ctx context.Context, request *mcp.CallToolRequest, arg
 	// Check if context exists
 	_, exists := configManager.GetContext(contextName)
 	if !exists {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: fmt.Sprintf("Context not found: %s", contextName)},
-			},
-			IsError: true,
-		}, nil, fmt.Errorf("context not found: %s", contextName)
+		return newErrorResult[map[string]interface{}](fmt.Errorf("context not found: %s", contextName))
 	}
 
 	// Get last request for the context
 	lastRequest, found := requestManager.GetLastRequest(contextName, configManager)
 	if !found {
-		return &mcp.CallToolResult{
-				Content: []mcp.Content{
-					&mcp.TextContent{Text: fmt.Sprintf("No requests found for context: %s", contextName)},
-				},
-			}, map[string]interface{}{
-				"success": false,
-				"message": fmt.Sprintf("No requests found for context: %s", contextName),
-			}, nil
+		return newErrorResult[map[string]interface{}](fmt.Errorf("No requests found for context: %s", contextName))
 	}
 
 	// Create response with requested details
-	result := requestManager.CreateRequestResponse(lastRequest, args.IncludeHTML, args.IncludeNetwork, args.IncludeConsole)
-	result["success"] = true
+	result := map[string]interface{}{
+		"success":      true,
+		"id":           lastRequest.ID,
+		"context_name": lastRequest.ContextName,
+		"url":          lastRequest.URL,
+		"timestamp":    lastRequest.Timestamp,
+		"duration_ms":  lastRequest.Duration.Milliseconds(),
+		"request_type": lastRequest.RequestType,
+	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Last request for context '%s': %s (%s)", contextName, lastRequest.URL, lastRequest.RequestType)},
-		},
-	}, result, nil
+	// Include input HTML if present
+	if lastRequest.InputHTML != "" {
+		result["input_html"] = lastRequest.InputHTML
+	}
+
+	if lastRequest.Error != "" {
+		result["error"] = lastRequest.Error
+		result["success"] = false
+		return &mcp.CallToolResult{}, result, nil
+	}
+
+	// Extract information from the BrowserResponse
+	if lastRequest.Response != nil {
+		// Convert cookies to expected format
+		if len(lastRequest.Response.Cookies) > 0 {
+			cookies := make([]map[string]interface{}, len(lastRequest.Response.Cookies))
+			for i, cookie := range lastRequest.Response.Cookies {
+				cookies[i] = map[string]interface{}{
+					"name":     cookie.Name,
+					"value":    cookie.Value,
+					"domain":   cookie.Domain,
+					"path":     cookie.Path,
+					"expires":  cookie.Expires,
+					"httpOnly": cookie.HTTPOnly,
+					"secure":   cookie.Secure,
+					"sameSite": cookie.SameSite,
+				}
+			}
+			result["set_cookies"] = cookies
+		}
+
+		if args.IncludeHTML && lastRequest.Response.HTML != nil {
+			result["html"] = *lastRequest.Response.HTML
+		}
+
+		if args.IncludeNetwork {
+			result["network_requests"] = lastRequest.Response.NetworkRequests
+		}
+
+		if args.IncludeConsole {
+			result["console_logs"] = lastRequest.Response.ConsoleLogs
+		}
+	}
+
+	return &mcp.CallToolResult{}, result, nil
 }
