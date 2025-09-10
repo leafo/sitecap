@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/png"
 	"net"
 	"net/http"
 	"os"
@@ -36,6 +40,49 @@ func saveTestScreenshot(t *testing.T, screenshotData []byte) {
 			t.Logf("Screenshot saved to %s for manual inspection", screenshotPath)
 		}
 	}
+}
+
+// validateImageContent validates that the image content contains a valid PNG image and reports its dimensions
+func validateImageContent(t *testing.T, imageContent *mcp.ImageContent) {
+	if len(imageContent.Data) == 0 {
+		t.Error("Expected image data, got empty data")
+		return
+	}
+	if imageContent.MIMEType == "" {
+		t.Error("Expected MIME type to be set")
+		return
+	}
+
+	// Decode base64 image data
+	imageBytes, err := base64.StdEncoding.DecodeString(string(imageContent.Data))
+	if err != nil {
+		t.Errorf("Failed to decode base64 image data: %v", err)
+		return
+	}
+
+	// Create reader from decoded bytes
+	reader := bytes.NewReader(imageBytes)
+
+	// Decode the image to verify it's valid and get dimensions
+	img, format, err := image.Decode(reader)
+	if err != nil {
+		t.Errorf("Failed to decode image: %v", err)
+		return
+	}
+
+	// Get image dimensions
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	// Verify dimensions are reasonable (greater than 0)
+	if width <= 0 || height <= 0 {
+		t.Errorf("Invalid image dimensions: %dx%d", width, height)
+		return
+	}
+
+	// Log image details for debugging
+	t.Logf("Valid %s image decoded: %dx%d pixels, MIME type: %s", format, width, height, imageContent.MIMEType)
 }
 
 // setupTestServer creates a test MCP server instance
@@ -122,12 +169,12 @@ func TestMCPServerToolsList(t *testing.T) {
 
 	// Verify all expected tools are present
 	expectedTools := map[string]string{
-		"configure_browser_context":     "Configure browser settings (viewport, timeout, cookies, headers) for a named browsing context. Use this to set up the browser environment before capturing screenshots or extracting content.",
-		"list_browser_contexts":         "List all configured browser contexts with their settings. Use this to see available contexts and their configurations.",
-		"capture_screenshot_from_url":   "Capture a screenshot of a webpage by navigating to the specified URL. Returns a base64-encoded PNG image. Supports viewport control, image resizing, and cookie management.",
-		"capture_screenshot_from_html":  "Capture a screenshot by rendering arbitrary HTML content in the browser. Useful for generating images from HTML templates or custom content. Returns a base64-encoded PNG image.",
-		"extract_html_content":          "Extract the fully rendered HTML content from a webpage after JavaScript execution. Use this to get the final DOM state including dynamically generated content.",
-		"get_last_browser_request":      "Retrieve details about the most recent browser request made in a specific context. Includes request/response data, cookies, network details, and console logs if requested.",
+		"configure_browser_context":    "Configure browser settings (viewport, timeout, cookies, headers) for a named browsing context. Use this to set up the browser environment before capturing screenshots or extracting content.",
+		"list_browser_contexts":        "List all configured browser contexts with their settings. Use this to see available contexts and their configurations.",
+		"capture_screenshot_from_url":  "Capture a screenshot of a webpage by navigating to the specified URL. Returns a base64-encoded PNG image. Supports viewport control, image resizing, and cookie management.",
+		"capture_screenshot_from_html": "Capture a screenshot by rendering arbitrary HTML content in the browser. Useful for generating images from HTML templates or custom content. Returns a base64-encoded PNG image.",
+		"extract_html_content":         "Extract the fully rendered HTML content from a webpage after JavaScript execution. Use this to get the final DOM state including dynamically generated content.",
+		"get_last_browser_request":     "Retrieve details about the most recent browser request made in a specific context. Includes request/response data, cookies, network details, and console logs if requested.",
 	}
 
 	if len(toolsResult.Tools) != len(expectedTools) {
@@ -352,16 +399,13 @@ func TestMCPServerHTMLToScreenshot(t *testing.T) {
 		t.Fatal("Expected response content, got empty")
 	}
 
-	// Check that we got a text content response
+	// Check that we got an image content response
 	content := result.Content[0]
-	if textContent, ok := content.(*mcp.TextContent); ok {
-		// The result should be a success message, not the actual image data
-		// The image data is stored in the request history, not returned directly
-		if !strings.Contains(textContent.Text, "successfully") {
-			t.Errorf("Expected success message, got: %s", textContent.Text)
-		}
+	if imageContent, ok := content.(*mcp.ImageContent); ok {
+		// Validate that the result contains a valid image with proper dimensions
+		validateImageContent(t, imageContent)
 	} else {
-		t.Fatal("Expected TextContent response from screenshot_html")
+		t.Fatal("Expected ImageContent response from screenshot_html")
 	}
 
 	testContextName := "default" // screenshot_html used default context
@@ -469,12 +513,11 @@ func TestMCPServerCookieUpdates(t *testing.T) {
 		t.Fatal("Expected response content, got empty")
 	}
 
-	if textContent, ok := result.Content[0].(*mcp.TextContent); ok {
-		if !strings.Contains(textContent.Text, "successfully") {
-			t.Errorf("Expected success message, got: %s", textContent.Text)
-		}
+	if imageContent, ok := result.Content[0].(*mcp.ImageContent); ok {
+		// Validate that the result contains a valid image with proper dimensions
+		validateImageContent(t, imageContent)
 	} else {
-		t.Fatal("Expected TextContent response from screenshot_url")
+		t.Fatal("Expected ImageContent response from screenshot_url")
 	}
 
 	// Verify that cookies were updated in the context
@@ -680,12 +723,11 @@ func TestMCPServerContextCookieTransmission(t *testing.T) {
 		t.Fatal("Expected response content, got empty")
 	}
 
-	if textContent, ok := result.Content[0].(*mcp.TextContent); ok {
-		if !strings.Contains(textContent.Text, "successfully") {
-			t.Errorf("Expected success message, got: %s", textContent.Text)
-		}
+	if imageContent, ok := result.Content[0].(*mcp.ImageContent); ok {
+		// Validate that the result contains a valid image with proper dimensions
+		validateImageContent(t, imageContent)
 	} else {
-		t.Fatal("Expected TextContent response from screenshot_url")
+		t.Fatal("Expected ImageContent response from screenshot_url")
 	}
 
 	// Get the context and verify the request was made
