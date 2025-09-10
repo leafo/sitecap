@@ -252,6 +252,7 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 		DomainWhitelist: config.DomainWhitelist,
 		ResizeParam:     args.Resize,
 		CustomHeaders:   config.Headers,
+		Cookies:         config.Cookies,
 
 		// capture everything
 		CaptureCookies:    true,
@@ -339,6 +340,7 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 		DomainWhitelist: config.DomainWhitelist,
 		ResizeParam:     args.Resize,
 		CustomHeaders:   config.Headers,
+		Cookies:         config.Cookies,
 
 		// capture everything
 		CaptureCookies:    true,
@@ -424,6 +426,7 @@ func handleMCPGetHTML(ctx context.Context, request *mcp.CallToolRequest, args Ge
 		TimeoutSeconds:  config.DefaultTimeout,
 		DomainWhitelist: config.DomainWhitelist,
 		CustomHeaders:   config.Headers,
+		Cookies:         config.Cookies,
 		Debug:           false,
 
 		CaptureCookies: true,

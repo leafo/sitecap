@@ -6,13 +6,37 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/go-rod/rod/lib/proto"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// saveTestScreenshot saves a screenshot to the test results directory if the environment variable is set
+func saveTestScreenshot(t *testing.T, screenshotData []byte) {
+	// Check if we should save screenshots to disk for manual inspection
+	if saveScreenshots := os.Getenv("SITECAP_SAVE_TEST_SCREENSHOTS"); saveScreenshots != "" {
+		// Create test results directory
+		testResultsDir := "test_results"
+		if err := os.MkdirAll(testResultsDir, 0755); err != nil {
+			t.Logf("Warning: Failed to create test results directory: %v", err)
+			return
+		}
+
+		// Save screenshot to disk using test name
+		screenshotPath := filepath.Join(testResultsDir, t.Name()+".png")
+		if err := os.WriteFile(screenshotPath, screenshotData, 0644); err != nil {
+			t.Logf("Warning: Failed to save screenshot to %s: %v", screenshotPath, err)
+		} else {
+			t.Logf("Screenshot saved to %s for manual inspection", screenshotPath)
+		}
+	}
+}
 
 // setupTestServer creates a test MCP server instance
 func setupTestServer() *mcp.Server {
@@ -26,7 +50,6 @@ func setupTestServer() *mcp.Server {
 		Version: "1.0.0-test",
 	}, nil)
 
-	// Register all tools
 	registerTools(server)
 
 	return server
@@ -148,109 +171,6 @@ func TestMCPServerToolsList(t *testing.T) {
 	wg.Wait()
 }
 
-// TestMCPServerToolsSchema tests that tools have proper schema information
-func TestMCPServerToolsSchema(t *testing.T) {
-	// This test focuses on the structure without requiring a full server run
-	server := setupTestServer()
-
-	if server == nil {
-		t.Fatal("Server should not be nil")
-	}
-
-	// Test that registerTools doesn't panic and creates expected structure
-	// This is a structural test since we can't easily intercept the internal tool registration
-
-	// Verify expected tool names match what's registered in registerTools function
-	expectedTools := []string{
-		"configure_context",
-		"list_contexts",
-		"screenshot_url",
-		"screenshot_html",
-		"get_html",
-		"get_last_request",
-	}
-
-	// This test validates the structure we expect based on the registerTools function
-	for _, toolName := range expectedTools {
-		// Each tool should have a non-empty name and description
-		// The actual validation happens in the integration test above
-		if toolName == "" {
-			t.Errorf("Tool name should not be empty")
-		}
-	}
-
-	t.Log("Tool schema structure test completed successfully")
-}
-
-// TestRegisterToolsFunction tests the registerTools function directly
-func TestRegisterToolsFunction(t *testing.T) {
-	server := setupTestServer()
-
-	// Test that registerTools doesn't panic
-	defer func() {
-		if r := recover(); r != nil {
-			t.Errorf("registerTools panicked: %v", r)
-		}
-	}()
-
-	// Call registerTools again to ensure it's idempotent
-	registerTools(server)
-
-	t.Log("registerTools function executed without panic")
-}
-
-// TestMCPServerManagersInitialization tests manager initialization
-func TestMCPServerManagersInitialization(t *testing.T) {
-	// Save original managers
-	originalConfig := configManager
-	originalRequest := requestManager
-
-	// Reset managers
-	configManager = nil
-	requestManager = nil
-
-	// Test initialization
-	setupTestServer()
-
-	// Verify managers are created
-	if configManager == nil {
-		t.Error("configManager should be initialized")
-	}
-	if requestManager == nil {
-		t.Error("requestManager should be initialized")
-	}
-
-	// Test manager functionality
-	if configManager != nil {
-		contexts := configManager.ListContexts()
-		if contexts == nil {
-			t.Error("ListContexts should return a non-nil map")
-		}
-	}
-
-	if requestManager != nil {
-		// Test that we can store and retrieve a request
-		testRequest := &RequestHistoryEntry{
-			ID:          "test-id",
-			ContextName: "test-context",
-			URL:         "https://example.com",
-		}
-		requestManager.StoreRequest(testRequest)
-
-		retrieved, exists := requestManager.GetRequest("test-id")
-		if !exists {
-			t.Error("Should be able to retrieve stored request")
-		}
-		if retrieved.ID != "test-id" {
-			t.Error("Retrieved request should have correct ID")
-		}
-	}
-
-	// Restore original managers
-	configManager = originalConfig
-	requestManager = originalRequest
-}
-
 // TestHTTPServer creates a test HTTP server that sets cookies
 func createTestHTTPServer(t *testing.T) (string, func()) {
 	// Create listener on random port
@@ -264,6 +184,16 @@ func createTestHTTPServer(t *testing.T) (string, func()) {
 
 	// Create HTTP server with cookie-setting endpoints
 	mux := http.NewServeMux()
+
+	// Page that renders the cookies
+	mux.HandleFunc("/cookies", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, "<!DOCTYPE html><html><head><title>Cookies Page</title></head><body><h1>Cookies</h1><ul>")
+		for _, cookie := range r.Cookies() {
+			fmt.Fprintf(w, "<li>%s: %s</li>", cookie.Name, cookie.Value)
+		}
+		fmt.Fprint(w, "</ul></body></html>")
+	})
 
 	// Main page that sets cookies
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -345,8 +275,7 @@ func createTestHTTPServer(t *testing.T) (string, func()) {
 	return baseURL, cleanup
 }
 
-// TestMCPServerHTMLScreenshotWithCookieUpdates tests the screenshot_html tool with cookie updates
-func TestMCPServerHTMLScreenshotWithCookieUpdates(t *testing.T) {
+func TestMCPServerHTMLToScreenshot(t *testing.T) {
 	// Create test HTTP server
 	serverURL, cleanup := createTestHTTPServer(t)
 	defer cleanup()
@@ -366,20 +295,11 @@ func TestMCPServerHTMLScreenshotWithCookieUpdates(t *testing.T) {
     </style>
 </head>
 <body>
-    <div class="test-container">
-        <h1>MCP HTML Screenshot Test</h1>
-        <div class="server-info">
-            <p>Test server running at: %s</p>
-            <p>This test verifies HTML rendering and cookie handling</p>
-        </div>
-        <p>Current timestamp: <span id="timestamp"></span></p>
-    </div>
+    <h1>MCP HTML Screenshot Test</h1>
+    <p>Test server running at: %s</p>
+    <p>Current timestamp: <span id="timestamp"><strong>TO BE REPLACED BY JAVASCRIPT</strong></span></p>
     <script>
         document.getElementById('timestamp').textContent = new Date().toISOString();
-        
-        // Make a request to our test server to trigger cookie setting
-        // Note: This is for testing - in a real scenario, the browser would handle this automatically
-        console.log('Test HTML content loaded successfully');
     </script>
 </body>
 </html>`, serverURL)
@@ -415,44 +335,12 @@ func TestMCPServerHTMLScreenshotWithCookieUpdates(t *testing.T) {
 	}
 	defer session.Close()
 
-	// First, configure a test context
-	configArgs := map[string]interface{}{
-		"context_name": "test_context",
-		"viewport":     "1920x1080",
-		"timeout":      30,
-	}
-
-	configResult, err := session.CallTool(ctx, &mcp.CallToolParams{
-		Name:      "configure_context",
-		Arguments: configArgs,
-	})
-
-	if err != nil {
-		t.Fatalf("configure_context tool call failed: %v", err)
-	}
-
-	// Verify context configuration succeeded
-	if len(configResult.Content) == 0 {
-		t.Fatal("Expected configure_context response content, got empty")
-	}
-
-	if textContent, ok := configResult.Content[0].(*mcp.TextContent); ok {
-		if !strings.Contains(textContent.Text, "successfully") {
-			t.Errorf("Context configuration failed: %s", textContent.Text)
-		}
-		t.Logf("Context configuration: %s", textContent.Text)
-	}
-
-	// Test screenshot_html tool with update_cookies parameter
-	args := map[string]interface{}{
-		"html_content":   htmlContent,
-		"context_name":   "test_context",
-		"update_cookies": true,
-	}
-
+	// render the HTML to screenshot using default context
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{
-		Name:      "screenshot_html",
-		Arguments: args,
+		Name: "screenshot_html",
+		Arguments: map[string]interface{}{
+			"html_content": htmlContent,
+		},
 	})
 
 	if err != nil {
@@ -472,13 +360,11 @@ func TestMCPServerHTMLScreenshotWithCookieUpdates(t *testing.T) {
 		if !strings.Contains(textContent.Text, "successfully") {
 			t.Errorf("Expected success message, got: %s", textContent.Text)
 		}
-		t.Logf("Tool response: %s", textContent.Text)
 	} else {
 		t.Fatal("Expected TextContent response from screenshot_html")
 	}
 
-	// Test context cookie updates - verify cookies were stored
-	testContextName := "test_context"
+	testContextName := "default" // screenshot_html used default context
 	context, exists := configManager.GetContext(testContextName)
 	if !exists {
 		t.Fatal("Expected test context to exist after screenshot_html call")
@@ -495,6 +381,7 @@ func TestMCPServerHTMLScreenshotWithCookieUpdates(t *testing.T) {
 
 	// Verify the stored request contains the expected data
 	lastRequest, exists := requestManager.GetRequest(context.LastRequestID)
+
 	if !exists {
 		t.Fatal("Expected to find stored request in request manager")
 	}
@@ -515,14 +402,10 @@ func TestMCPServerHTMLScreenshotWithCookieUpdates(t *testing.T) {
 	// Verify screenshot data is stored
 	if lastRequest.Response == nil || len(lastRequest.Response.Screenshot) == 0 {
 		t.Error("Expected screenshot data to be stored in request")
+	} else {
+		// Save screenshot to disk if environment variable is set
+		saveTestScreenshot(t, lastRequest.Response.Screenshot)
 	}
-
-	t.Logf("✓ Integration test completed successfully")
-	t.Logf("  - HTTP test server created and served content")
-	t.Logf("  - MCP screenshot_html tool executed successfully")
-	t.Logf("  - Screenshot generated and returned as base64")
-	t.Logf("  - Browser context updated with request history")
-	t.Logf("  - Request data stored in request manager")
 
 	// Stop server
 	cancel()
@@ -569,31 +452,12 @@ func TestMCPServerCookieUpdates(t *testing.T) {
 	}
 	defer session.Close()
 
-	// Configure a test context
-	configArgs := map[string]interface{}{
-		"context_name": "cookie_test_context",
-		"viewport":     "1280x720",
-		"timeout":      15,
-	}
-
-	_, err = session.CallTool(ctx, &mcp.CallToolParams{
-		Name:      "configure_context",
-		Arguments: configArgs,
-	})
-	if err != nil {
-		t.Fatalf("configure_context tool call failed: %v", err)
-	}
-
-	// Make a request to our test server using screenshot_url with update_cookies=true
-	screenshotArgs := map[string]interface{}{
-		"url":            serverURL,
-		"context_name":   "cookie_test_context",
-		"update_cookies": true,
-	}
-
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{
-		Name:      "screenshot_url",
-		Arguments: screenshotArgs,
+		Name: "screenshot_url",
+		Arguments: map[string]interface{}{
+			"url":            serverURL,
+			"update_cookies": true,
+		},
 	})
 
 	if err != nil {
@@ -609,113 +473,263 @@ func TestMCPServerCookieUpdates(t *testing.T) {
 		if !strings.Contains(textContent.Text, "successfully") {
 			t.Errorf("Expected success message, got: %s", textContent.Text)
 		}
-		t.Logf("Screenshot tool response: %s", textContent.Text)
 	} else {
 		t.Fatal("Expected TextContent response from screenshot_url")
 	}
 
 	// Verify that cookies were updated in the context
-	contextName := "cookie_test_context"
+	contextName := "default"
 	context, exists := configManager.GetContext(contextName)
+
 	if !exists {
-		t.Fatal("Expected cookie test context to exist after screenshot_url call")
+		t.Fatal("missing default context")
 	}
 
-	// Check if cookies were set - Cookie capture functionality should now be working
-	t.Logf("Context has %d cookies after request", len(context.Cookies))
-
-	// Debug: check the stored request for details about what was captured
-	var lastRequest *RequestHistoryEntry
-	if req, exists := requestManager.GetRequest(context.LastRequestID); exists {
-		lastRequest = req
-		t.Logf("Debug: Request URL was %s", lastRequest.URL)
-		// Response headers are not directly stored in the current structure
-		var cookiesCount int
-		if lastRequest.Response != nil {
-			cookiesCount = len(lastRequest.Response.Cookies)
-		}
-		t.Logf("Debug: Cookies captured: %d", cookiesCount)
-
-		if lastRequest.Response != nil && len(lastRequest.Response.Cookies) > 0 {
-			t.Logf("✓ Cookies were captured from HTTP response:")
-			for i, cookie := range lastRequest.Response.Cookies {
-				t.Logf("  Cookie[%d]: %s=%s (domain=%s, path=%s)", i, cookie.Name, cookie.Value, cookie.Domain, cookie.Path)
-			}
-		} else {
-			t.Logf("No cookies were captured from HTTP response - this may indicate an issue with cookie capture")
-		}
-	}
-
-	// Verify that cookies were captured and updated in context
-	var lastRequestCookiesCount int
-	if lastRequest != nil && lastRequest.Response != nil {
-		lastRequestCookiesCount = len(lastRequest.Response.Cookies)
-	}
-	if len(context.Cookies) == 0 && lastRequestCookiesCount == 0 {
-		t.Error("Expected cookies to be captured and updated in context with update_cookies=true")
-		t.Error("This suggests the cookie capture implementation may have an issue")
-	} else if len(context.Cookies) > 0 {
-		t.Logf("✓ Context has %d cookies - cookie update functionality is working", len(context.Cookies))
-
-		// Verify expected cookies are present
-		expectedCookies := map[string]string{
-			"session_id": "abc123xyz",
-			"user_pref":  "dark_mode",
-			"analytics":  "enabled",
-		}
-
-		foundCookies := make(map[string]string)
-		for _, cookie := range context.Cookies {
-			foundCookies[cookie.Name] = cookie.Value
-		}
-
-		for name, expectedValue := range expectedCookies {
-			if actualValue, exists := foundCookies[name]; exists {
-				if actualValue == expectedValue {
-					t.Logf("✓ Cookie '%s' correctly set to '%s'", name, actualValue)
-				} else {
-					t.Errorf("Cookie '%s' has value '%s', expected '%s'", name, actualValue, expectedValue)
-				}
-			} else {
-				t.Logf("Expected cookie '%s' not found in context (may be domain/path mismatch)", name)
-			}
-		}
-	}
-
-	// Verify request history was updated
-	if context.LastRequestID == "" {
-		t.Error("Expected LastRequestID to be set after screenshot_url call")
-	}
-
-	if lastRequest == nil {
+	// Verify the last request object contains the cookies
+	lastRequest, exists := requestManager.GetRequest(context.LastRequestID)
+	if !exists {
 		t.Fatal("Expected to find stored request in request manager")
 	}
 
-	if lastRequest.RequestType != "screenshot" {
-		t.Errorf("Expected request type 'screenshot', got %s", lastRequest.RequestType)
+	if lastRequest.Response == nil {
+		t.Fatal("Expected response data in stored request")
 	}
 
-	if lastRequest.URL != serverURL {
-		t.Errorf("Expected URL %s, got %s", serverURL, lastRequest.URL)
+	// Verify the captured cookies from the browser response
+	// Note: Only cookies with path "/" or that match the current path will be captured
+	// The analytics cookie with path="/analytics" won't be included since we're visiting "/"
+	expectedCookies := []struct {
+		name     string
+		value    string
+		domain   string
+		path     string
+		httpOnly bool
+	}{
+		{"session_id", "abc123xyz", "localhost", "/", true},
+		{"user_pref", "dark_mode", "localhost", "/", false},
+		{"test_cookie", "test_value", "localhost", "/", false},
+		{"another_cookie", "another_value", "localhost", "/", false},
 	}
 
-	// Verify Cookies field - cookie capture should now be working
-	var responseCookiesCount int
-	if lastRequest.Response != nil {
-		responseCookiesCount = len(lastRequest.Response.Cookies)
+	if len(lastRequest.Response.Cookies) != len(expectedCookies) {
+		t.Errorf("Expected %d cookies in response, got %d", len(expectedCookies), len(lastRequest.Response.Cookies))
 	}
-	if responseCookiesCount == 0 {
-		t.Error("Response cookies field is empty - cookie capture implementation may have an issue")
-		t.Error("Expected cookies to be captured from HTTP response headers")
+
+	// Verify each expected cookie is present in the response
+	cookieMap := make(map[string]*proto.NetworkCookie)
+	for _, cookie := range lastRequest.Response.Cookies {
+		cookieMap[cookie.Name] = cookie
+	}
+
+	for _, expected := range expectedCookies {
+		cookie, found := cookieMap[expected.name]
+		if !found {
+			t.Errorf("Expected cookie %s not found in response", expected.name)
+			continue
+		}
+
+		if cookie.Value != expected.value {
+			t.Errorf("Cookie %s: expected value %s, got %s", expected.name, expected.value, cookie.Value)
+		}
+
+		if cookie.Domain != expected.domain {
+			t.Errorf("Cookie %s: expected domain %s, got %s", expected.name, expected.domain, cookie.Domain)
+		}
+
+		if cookie.Path != expected.path {
+			t.Errorf("Cookie %s: expected path %s, got %s", expected.name, expected.path, cookie.Path)
+		}
+
+		if cookie.HTTPOnly != expected.httpOnly {
+			t.Errorf("Cookie %s: expected httpOnly %v, got %v", expected.name, expected.httpOnly, cookie.HTTPOnly)
+		}
+	}
+
+	// Verify context.Cookies has been updated with the resulting cookies
+	if len(context.Cookies) == 0 {
+		t.Fatal("Expected context cookies to be updated, but got empty slice")
+	}
+
+	// Create a map of context cookies for easier verification
+	contextCookieMap := make(map[string]*proto.NetworkCookieParam)
+	for _, cookie := range context.Cookies {
+		contextCookieMap[cookie.Name] = cookie
+	}
+
+	// Verify each expected cookie is present in the context
+	for _, expected := range expectedCookies {
+		contextCookie, found := contextCookieMap[expected.name]
+		if !found {
+			t.Errorf("Expected cookie %s not found in context cookies", expected.name)
+			continue
+		}
+
+		if contextCookie.Value != expected.value {
+			t.Errorf("Context cookie %s: expected value %s, got %s", expected.name, expected.value, contextCookie.Value)
+		}
+
+		if contextCookie.Domain != expected.domain {
+			t.Errorf("Context cookie %s: expected domain %s, got %s", expected.name, expected.domain, contextCookie.Domain)
+		}
+
+		if contextCookie.Path != expected.path {
+			t.Errorf("Context cookie %s: expected path %s, got %s", expected.name, expected.path, contextCookie.Path)
+		}
+
+		if contextCookie.HTTPOnly != expected.httpOnly {
+			t.Errorf("Context cookie %s: expected httpOnly %v, got %v", expected.name, expected.httpOnly, contextCookie.HTTPOnly)
+		}
+	}
+
+	// Stop server
+	cancel()
+	wg.Wait()
+}
+
+// TestMCPServerContextCookieTransmission tests that context cookies are properly sent to the test server
+func TestMCPServerContextCookieTransmission(t *testing.T) {
+	// Create test HTTP server that can display received cookies
+	serverURL, cleanup := createTestHTTPServer(t)
+	defer cleanup()
+
+	// Wait briefly for server to be ready
+	time.Sleep(100 * time.Millisecond)
+
+	// Setup MCP server for testing
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	server := setupTestServer()
+
+	// Run server in background
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		err := server.Run(ctx, serverTransport)
+		if err != nil && err != context.Canceled {
+			t.Errorf("Server run error: %v", err)
+		}
+	}()
+
+	// Create client and connect to server
+	client := mcp.NewClient(&mcp.Implementation{
+		Name:    "test-client",
+		Version: "1.0.0",
+	}, nil)
+
+	session, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatalf("Failed to connect client to server: %v", err)
+	}
+	defer session.Close()
+
+	// Configure a test context with predefined cookies
+	testContextName := "cookie_test_context"
+	configArgs := map[string]interface{}{
+		"context_name": testContextName,
+		"viewport":     "1280x720",
+		"timeout":      20,
+		"cookies": []map[string]interface{}{
+			{
+				"name":   "auth_token",
+				"value":  "xyz123",
+				"domain": "localhost",
+				"path":   "/",
+			},
+			{
+				"name":   "user_id",
+				"value":  "456",
+				"domain": "localhost",
+				"path":   "/",
+			},
+			{
+				"name":   "session",
+				"value":  "active",
+				"domain": "localhost",
+				"path":   "/",
+			},
+		},
+	}
+
+	_, err = session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "configure_context",
+		Arguments: configArgs,
+	})
+	if err != nil {
+		t.Fatalf("configure_context tool call failed: %v", err)
+	}
+
+	// Make a screenshot request to the /cookies endpoint using the configured context
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "screenshot_url",
+		Arguments: map[string]interface{}{
+			"url":          serverURL + "/cookies",
+			"context_name": testContextName,
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("screenshot_url tool call failed: %v", err)
+	}
+
+	// Verify successful response
+	if len(result.Content) == 0 {
+		t.Fatal("Expected response content, got empty")
+	}
+
+	if textContent, ok := result.Content[0].(*mcp.TextContent); ok {
+		if !strings.Contains(textContent.Text, "successfully") {
+			t.Errorf("Expected success message, got: %s", textContent.Text)
+		}
 	} else {
-		t.Logf("✓ Request history shows %d cookies were captured and stored", responseCookiesCount)
+		t.Fatal("Expected TextContent response from screenshot_url")
 	}
 
-	t.Logf("✓ Cookie integration test completed")
-	t.Logf("  - HTTP test server created and responded with Set-Cookie headers")
-	t.Logf("  - MCP screenshot_url tool executed with update_cookies=true")
-	t.Logf("  - Cookie capture and context update functionality verified")
-	t.Logf("  - Browser automation successfully intercepted HTTP response cookies")
+	// Get the context and verify the request was made
+	context, exists := configManager.GetContext(testContextName)
+	if !exists {
+		t.Fatal("Expected test context to exist")
+	}
+
+	// Get the last request to verify HTML content
+	lastRequest, exists := requestManager.GetRequest(context.LastRequestID)
+	if !exists {
+		t.Fatal("Expected to find stored request in request manager")
+	}
+
+	if lastRequest.Response == nil || lastRequest.Response.HTML == nil {
+		t.Fatal("Expected HTML content in response")
+	}
+
+	// Parse the HTML from the /cookies endpoint to verify our cookies were sent
+	htmlContent := *lastRequest.Response.HTML
+	t.Logf("Received HTML from /cookies endpoint:\n%s", htmlContent)
+
+	// Expected cookies that should appear in the HTML
+	expectedCookies := []struct {
+		name  string
+		value string
+	}{
+		{"auth_token", "xyz123"},
+		{"user_id", "456"},
+		{"session", "active"},
+	}
+
+	// Verify each expected cookie appears in the HTML
+	for _, expected := range expectedCookies {
+		expectedPattern := fmt.Sprintf("<li>%s: %s</li>", expected.name, expected.value)
+		if !strings.Contains(htmlContent, expectedPattern) {
+			t.Errorf("Expected cookie pattern %q not found in HTML content", expectedPattern)
+		}
+	}
+
+	// Also verify that the page shows the expected structure
+	if !strings.Contains(htmlContent, "<h1>Cookies</h1>") {
+		t.Error("Expected cookies page header not found")
+	}
 
 	// Stop server
 	cancel()

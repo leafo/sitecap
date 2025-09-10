@@ -46,6 +46,7 @@ type RequestConfig struct {
 	DomainWhitelist []string
 	ResizeParam     string
 	CustomHeaders   map[string]string
+	Cookies         []*proto.NetworkCookieParam // Cookies to set before navigation
 	Debug           bool
 
 	CaptureCookies    bool // Enable cookie capture after navigation
@@ -537,6 +538,14 @@ func executeBrowserRequest(url, htmlContent string, config *RequestConfig) (*Bro
 	// Set timeout if specified
 	if config.TimeoutSeconds > 0 {
 		page = page.Timeout(time.Duration(config.TimeoutSeconds) * time.Second)
+	}
+
+	// Set cookies before navigation if specified
+	if len(config.Cookies) > 0 {
+		err = page.SetCookies(config.Cookies)
+		if err != nil {
+			return nil, fmt.Errorf("failed to set cookies: %v", err)
+		}
 	}
 
 	// Load content (URL or HTML)
