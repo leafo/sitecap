@@ -36,10 +36,10 @@ func (m *Metrics) String() string {
 		var value string
 		switch field.Type().String() {
 		case "atomic.Int64":
-			atomicInt := field.Interface().(atomic.Int64)
+			atomicInt := field.Addr().Interface().(*atomic.Int64)
 			value = strconv.FormatInt(atomicInt.Load(), 10)
 		case "atomic.Uint64":
-			atomicUint := field.Interface().(atomic.Uint64)
+			atomicUint := field.Addr().Interface().(*atomic.Uint64)
 			nanoseconds := atomicUint.Load()
 			seconds := float64(nanoseconds) / 1e9
 			value = strconv.FormatFloat(seconds, 'f', 6, 64)
