@@ -122,12 +122,12 @@ func TestMCPServerToolsList(t *testing.T) {
 
 	// Verify all expected tools are present
 	expectedTools := map[string]string{
-		"configure_context": "Configure browser settings for a named context",
-		"list_contexts":     "List all browser contexts",
-		"screenshot_url":    "Take a screenshot of a webpage from URL",
-		"screenshot_html":   "Take a screenshot by rendering arbitrary HTML content",
-		"get_html":          "Get rendered HTML content from a webpage",
-		"get_last_request":  "Get details about the last request made in a browser context",
+		"configure_browser_context":     "Configure browser settings (viewport, timeout, cookies, headers) for a named browsing context. Use this to set up the browser environment before capturing screenshots or extracting content.",
+		"list_browser_contexts":         "List all configured browser contexts with their settings. Use this to see available contexts and their configurations.",
+		"capture_screenshot_from_url":   "Capture a screenshot of a webpage by navigating to the specified URL. Returns a base64-encoded PNG image. Supports viewport control, image resizing, and cookie management.",
+		"capture_screenshot_from_html":  "Capture a screenshot by rendering arbitrary HTML content in the browser. Useful for generating images from HTML templates or custom content. Returns a base64-encoded PNG image.",
+		"extract_html_content":          "Extract the fully rendered HTML content from a webpage after JavaScript execution. Use this to get the final DOM state including dynamically generated content.",
+		"get_last_browser_request":      "Retrieve details about the most recent browser request made in a specific context. Includes request/response data, cookies, network details, and console logs if requested.",
 	}
 
 	if len(toolsResult.Tools) != len(expectedTools) {
@@ -337,14 +337,14 @@ func TestMCPServerHTMLToScreenshot(t *testing.T) {
 
 	// render the HTML to screenshot using default context
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{
-		Name: "screenshot_html",
+		Name: "capture_screenshot_from_html",
 		Arguments: map[string]interface{}{
 			"html_content": htmlContent,
 		},
 	})
 
 	if err != nil {
-		t.Fatalf("screenshot_html tool call failed: %v", err)
+		t.Fatalf("capture_screenshot_from_html tool call failed: %v", err)
 	}
 
 	// Verify the response structure
@@ -453,7 +453,7 @@ func TestMCPServerCookieUpdates(t *testing.T) {
 	defer session.Close()
 
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{
-		Name: "screenshot_url",
+		Name: "capture_screenshot_from_url",
 		Arguments: map[string]interface{}{
 			"url":            serverURL,
 			"update_cookies": true,
@@ -461,7 +461,7 @@ func TestMCPServerCookieUpdates(t *testing.T) {
 	})
 
 	if err != nil {
-		t.Fatalf("screenshot_url tool call failed: %v", err)
+		t.Fatalf("capture_screenshot_from_url tool call failed: %v", err)
 	}
 
 	// Verify successful response
@@ -655,16 +655,16 @@ func TestMCPServerContextCookieTransmission(t *testing.T) {
 	}
 
 	_, err = session.CallTool(ctx, &mcp.CallToolParams{
-		Name:      "configure_context",
+		Name:      "configure_browser_context",
 		Arguments: configArgs,
 	})
 	if err != nil {
-		t.Fatalf("configure_context tool call failed: %v", err)
+		t.Fatalf("configure_browser_context tool call failed: %v", err)
 	}
 
 	// Make a screenshot request to the /cookies endpoint using the configured context
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{
-		Name: "screenshot_url",
+		Name: "capture_screenshot_from_url",
 		Arguments: map[string]interface{}{
 			"url":          serverURL + "/cookies",
 			"context_name": testContextName,
@@ -672,7 +672,7 @@ func TestMCPServerContextCookieTransmission(t *testing.T) {
 	})
 
 	if err != nil {
-		t.Fatalf("screenshot_url tool call failed: %v", err)
+		t.Fatalf("capture_screenshot_from_url tool call failed: %v", err)
 	}
 
 	// Verify successful response

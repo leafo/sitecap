@@ -18,6 +18,23 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 )
 
+type RequestConfig struct {
+	ViewportWidth   int
+	ViewportHeight  int
+	TimeoutSeconds  int
+	DomainWhitelist []string
+	ResizeParam     string
+	CustomHeaders   map[string]string
+	Cookies         []*proto.NetworkCookieParam // Cookies to set before navigation
+	Debug           bool
+
+	CaptureCookies    bool // Enable cookie capture after navigation
+	CaptureScreenshot bool // Enable screenshot capture
+	CaptureHTML       bool // Enable HTML content capture
+	CaptureNetwork    bool // Enable network request capture
+	CaptureLogs       bool // Enable console log capture
+}
+
 type CapturedNetworkRequest struct {
 	URL             string            `json:"url"`
 	Method          string            `json:"method"`
@@ -37,23 +54,6 @@ type CapturedConsoleLog struct {
 	Source    string    `json:"source,omitempty"`
 	Line      int       `json:"line,omitempty"`
 	Column    int       `json:"column,omitempty"`
-}
-
-type RequestConfig struct {
-	ViewportWidth   int
-	ViewportHeight  int
-	TimeoutSeconds  int
-	DomainWhitelist []string
-	ResizeParam     string
-	CustomHeaders   map[string]string
-	Cookies         []*proto.NetworkCookieParam // Cookies to set before navigation
-	Debug           bool
-
-	CaptureCookies    bool // Enable cookie capture after navigation
-	CaptureScreenshot bool // Enable screenshot capture
-	CaptureHTML       bool // Enable HTML content capture
-	CaptureNetwork    bool // Enable network request capture
-	CaptureLogs       bool // Enable console log capture
 }
 
 type BrowserResponse struct {

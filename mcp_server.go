@@ -38,36 +38,37 @@ func StartMCPServer() {
 
 // registerTools registers all MCP tools
 func registerTools(server *mcp.Server) {
-	// Configuration management tools
+	// Browser context management tools
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "configure_context",
-		Description: "Configure browser settings for a named context",
+		Name:        "configure_browser_context",
+		Description: "Configure browser settings (viewport, timeout, cookies, headers) for a named browsing context. Use this to set up the browser environment before capturing screenshots or extracting content.",
 	}, handleConfigureContext)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_contexts",
-		Description: "List all browser contexts",
+		Name:        "list_browser_contexts",
+		Description: "List all configured browser contexts with their settings. Use this to see available contexts and their configurations.",
 	}, handleListContexts)
 
-	// Page operation tools
+	// Screenshot capture tools
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "screenshot_url",
-		Description: "Take a screenshot of a webpage from URL",
+		Name:        "capture_screenshot_from_url",
+		Description: "Capture a screenshot of a webpage by navigating to the specified URL. Returns a base64-encoded PNG image. Supports viewport control, image resizing, and cookie management.",
 	}, handleMCPScreenshot)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "screenshot_html",
-		Description: "Take a screenshot by rendering arbitrary HTML content",
+		Name:        "capture_screenshot_from_html",
+		Description: "Capture a screenshot by rendering arbitrary HTML content in the browser. Useful for generating images from HTML templates or custom content. Returns a base64-encoded PNG image.",
 	}, handleMCPScreenshotHTML)
 
+	// Content extraction tools
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "get_html",
-		Description: "Get rendered HTML content from a webpage",
+		Name:        "extract_html_content",
+		Description: "Extract the fully rendered HTML content from a webpage after JavaScript execution. Use this to get the final DOM state including dynamically generated content.",
 	}, handleMCPGetHTML)
 
 	// Request history tools
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "get_last_request",
-		Description: "Get details about the last request made in a browser context",
+		Name:        "get_last_browser_request",
+		Description: "Retrieve details about the most recent browser request made in a specific context. Includes request/response data, cookies, network details, and console logs if requested.",
 	}, handleGetLastRequest)
 }
