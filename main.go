@@ -76,6 +76,9 @@ type JSONOutput struct {
 
 var globalDebug bool
 var globalCustomHeaders map[string]string
+var globalViewport string
+var globalTimeout int
+var globalDomains string
 
 func convertToJSONOutput(response *BrowserResponse) *JSONOutput {
 	output := &JSONOutput{
@@ -650,8 +653,11 @@ func main() {
 	debug := flag.Bool("debug", false, "Enable debug logging of all network requests")
 	flag.Parse()
 
-	// Set global debug flag
+	// Set global flags
 	globalDebug = *debug
+	globalViewport = *viewport
+	globalTimeout = *timeout
+	globalDomains = *domains
 
 	// Parse and set global custom headers
 	var err error

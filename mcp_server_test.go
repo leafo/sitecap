@@ -1145,3 +1145,122 @@ func TestMCPServerConfigureClearVsPreserveSemantics(t *testing.T) {
 	cancel()
 	wg.Wait()
 }
+
+// TestMCPServerCLIFlagsAppliedToDefaultContext tests that CLI flags are properly applied to the default context
+func TestMCPServerCLIFlagsAppliedToDefaultContext(t *testing.T) {
+	// Save original global values to restore after test
+	originalViewport := globalViewport
+	originalTimeout := globalTimeout
+	originalDomains := globalDomains
+	originalCustomHeaders := globalCustomHeaders
+	originalDebug := globalDebug
+
+	// Set up global flags as if they were parsed from CLI
+	globalViewport = "1920x1080"
+	globalTimeout = 60
+	globalDomains = "example.com,test.com"
+	globalCustomHeaders = map[string]string{
+		"Test-Header":    "test-value",
+		"Another-Header": "another-value",
+	}
+	globalDebug = true
+
+	// Restore original values after test
+	defer func() {
+		globalViewport = originalViewport
+		globalTimeout = originalTimeout
+		globalDomains = originalDomains
+		globalCustomHeaders = originalCustomHeaders
+		globalDebug = originalDebug
+	}()
+
+	// Create a fresh default context with the global flags
+	defaultConfig := DefaultBrowserContextConfig()
+
+	// Verify viewport was applied from global flag
+	if defaultConfig.DefaultViewport.Width != 1920 || defaultConfig.DefaultViewport.Height != 1080 {
+		t.Errorf("Expected viewport from global flag 1920x1080, got %dx%d",
+			defaultConfig.DefaultViewport.Width, defaultConfig.DefaultViewport.Height)
+	}
+
+	// Verify timeout was applied from global flag
+	if defaultConfig.DefaultTimeout != 60 {
+		t.Errorf("Expected timeout from global flag 60, got %d", defaultConfig.DefaultTimeout)
+	}
+
+	// Verify domains were applied from global flag
+	expectedDomains := []string{"example.com", "test.com"}
+	if len(defaultConfig.DomainWhitelist) != len(expectedDomains) {
+		t.Errorf("Expected %d domains from global flag, got %d", len(expectedDomains), len(defaultConfig.DomainWhitelist))
+	} else {
+		for i, expected := range expectedDomains {
+			if defaultConfig.DomainWhitelist[i] != expected {
+				t.Errorf("Expected domain %s at index %d, got %s", expected, i, defaultConfig.DomainWhitelist[i])
+			}
+		}
+	}
+
+	// Verify headers were applied from global flag
+	if len(defaultConfig.Headers) != len(globalCustomHeaders) {
+		t.Errorf("Expected %d headers from global flag, got %d", len(globalCustomHeaders), len(defaultConfig.Headers))
+	} else {
+		for key, expectedValue := range globalCustomHeaders {
+			if actualValue, exists := defaultConfig.Headers[key]; !exists {
+				t.Errorf("Expected header %s from global flag not found", key)
+			} else if actualValue != expectedValue {
+				t.Errorf("Expected header %s=%s from global flag, got %s", key, expectedValue, actualValue)
+			}
+		}
+	}
+
+	// Now test that debug flag is properly passed through to RequestConfig
+	// Create a context manager and use the config in an MCP tool request
+	configManager = NewContextConfigManager()
+	requestManager = NewRequestHistoryManager()
+
+	// Get the default context (which should use our global flags)
+	contextConfig, exists := configManager.GetContext("default")
+	if !exists {
+		t.Fatal("Expected default context to exist")
+	}
+
+	// Create a RequestConfig using the same logic as in the MCP tools
+	requestConfig := &RequestConfig{
+		ViewportWidth:   contextConfig.DefaultViewport.Width,
+		ViewportHeight:  contextConfig.DefaultViewport.Height,
+		TimeoutSeconds:  contextConfig.DefaultTimeout,
+		DomainWhitelist: contextConfig.DomainWhitelist,
+		CustomHeaders:   contextConfig.Headers,
+		Debug:           globalDebug, // This should be true
+	}
+
+	// Verify debug flag was applied
+	if !requestConfig.Debug {
+		t.Error("Expected debug flag to be true from global flag, got false")
+	}
+
+	// Verify all other values match our global flags
+	if requestConfig.ViewportWidth != 1920 || requestConfig.ViewportHeight != 1080 {
+		t.Errorf("Expected RequestConfig viewport 1920x1080 from global flags, got %dx%d",
+			requestConfig.ViewportWidth, requestConfig.ViewportHeight)
+	}
+
+	if requestConfig.TimeoutSeconds != 60 {
+		t.Errorf("Expected RequestConfig timeout 60 from global flag, got %d", requestConfig.TimeoutSeconds)
+	}
+
+	if len(requestConfig.DomainWhitelist) != 2 ||
+		requestConfig.DomainWhitelist[0] != "example.com" ||
+		requestConfig.DomainWhitelist[1] != "test.com" {
+		t.Errorf("Expected RequestConfig domains [example.com test.com] from global flag, got %v",
+			requestConfig.DomainWhitelist)
+	}
+
+	if len(requestConfig.CustomHeaders) != 2 ||
+		requestConfig.CustomHeaders["Test-Header"] != "test-value" ||
+		requestConfig.CustomHeaders["Another-Header"] != "another-value" {
+		t.Errorf("Expected RequestConfig headers from global flag, got %v", requestConfig.CustomHeaders)
+	}
+
+	t.Log("All CLI flags were successfully applied to the default context and RequestConfig")
+}

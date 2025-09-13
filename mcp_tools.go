@@ -244,6 +244,7 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 		ResizeParam:     args.Resize,
 		CustomHeaders:   config.Headers,
 		Cookies:         config.Cookies,
+		Debug:           globalDebug,
 
 		// capture everything
 		CaptureCookies:    true,
@@ -319,6 +320,7 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 		ResizeParam:     args.Resize,
 		CustomHeaders:   config.Headers,
 		Cookies:         config.Cookies,
+		Debug:           globalDebug,
 
 		// capture everything
 		CaptureCookies:    true,
@@ -392,7 +394,7 @@ func handleMCPGetHTML(ctx context.Context, request *mcp.CallToolRequest, args Ge
 		DomainWhitelist: config.DomainWhitelist,
 		CustomHeaders:   config.Headers,
 		Cookies:         config.Cookies,
-		Debug:           false,
+		Debug:           globalDebug,
 
 		CaptureCookies: true,
 		CaptureHTML:    true,
@@ -472,7 +474,7 @@ func handleGetLastRequest(ctx context.Context, request *mcp.CallToolRequest, arg
 		return newErrorResult[map[string]interface{}](fmt.Errorf("No requests found for context: %s", contextName))
 	}
 
-	// Create response with requested details
+	// Create response with basic fields that are always present
 	result := map[string]interface{}{
 		"success":      true,
 		"id":           lastRequest.ID,
@@ -488,6 +490,7 @@ func handleGetLastRequest(ctx context.Context, request *mcp.CallToolRequest, arg
 		result["input_html"] = lastRequest.InputHTML
 	}
 
+	// Handle error cases
 	if lastRequest.Error != "" {
 		result["error"] = lastRequest.Error
 		result["success"] = false

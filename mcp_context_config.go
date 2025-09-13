@@ -22,15 +22,41 @@ type BrowserContextConfig struct {
 	mutex           sync.RWMutex
 }
 
-// TODO this should pull defaults from command line flags
 func DefaultBrowserContextConfig() *BrowserContextConfig {
+	// Start with default values
+	viewport := ViewportConfig{Width: 1366, Height: 854}
+	timeout := 30
+	var domainWhitelist []string
+	headers := make(map[string]string)
+
+	// Apply global CLI flags if they were set
+	if globalViewport != "" {
+		if width, height, err := ParseViewportString(globalViewport); err == nil {
+			viewport = ViewportConfig{Width: width, Height: height}
+		}
+	}
+
+	if globalTimeout > 0 {
+		timeout = globalTimeout
+	}
+
+	if globalDomains != "" {
+		if domains, err := ParseDomainWhitelist(globalDomains); err == nil {
+			domainWhitelist = domains
+		}
+	}
+
+	if globalCustomHeaders != nil {
+		headers = globalCustomHeaders
+	}
+
 	return &BrowserContextConfig{
 		Name:            "default",
-		DefaultViewport: ViewportConfig{Width: 1366, Height: 854},
-		DefaultTimeout:  30,
-		DomainWhitelist: []string{},
+		DefaultViewport: viewport,
+		DefaultTimeout:  timeout,
+		DomainWhitelist: domainWhitelist,
 		Cookies:         []*proto.NetworkCookieParam{},
-		Headers:         map[string]string{},
+		Headers:         headers,
 		RequestHistory:  []string{},
 	}
 }
