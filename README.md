@@ -1,6 +1,6 @@
 # sitecap
 
-Tool for taking screenshots of websites using Chrome CDP, available in both command line and HTTP service modes.
+Tool for taking screenshots of websites using Chrome CDP, available in command line, HTTP service, and Model Context Protocol (MCP) server modes.
 
 ## Installation
 
@@ -16,6 +16,8 @@ go install github.com/leafo/sitecap@latest
 sitecap [--viewport WxH] [--resize WxH] [--timeout N] [--domains list] [--debug] <URL> > screenshot.png
 sitecap [options] - < input.html > screenshot.png
 sitecap [options] --html <URL> > page.html
+sitecap --mcp
+sitecap --http --mcp
 ```
 
 Examples:
@@ -159,6 +161,29 @@ curl "http://localhost:8080/?url=https://example.com&resize=800x600^" > cropped.
 # Manual crop with offset (URL-safe)
 curl "http://localhost:8080/?url=https://example.com&resize=200x200_100_50" > crop-offset.png
 ```
+
+### Model Context Protocol (MCP) Support
+
+Sitecap can act as an MCP server, exposing the same capture tools described above to MCP clients.
+
+#### Stdio Transport
+
+Launch Sitecap as an MCP server over stdio (ideal when a client spawns the process directly):
+
+```bash
+sitecap --mcp
+```
+
+#### Streamable HTTP Transport
+
+Combine the HTTP mode with the MCP server to serve the streamable MCP transport from `/mcp` alongside the REST endpoints:
+
+```bash
+sitecap --http --mcp --listen localhost:8080
+# MCP clients should connect to http://localhost:8080/mcp
+```
+
+Both modes use the same tool definitions and configuration managers, ensuring consistent behavior regardless of transport.
 
 ### Metrics
 
