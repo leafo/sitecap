@@ -36,6 +36,7 @@ type ScreenshotArgs struct {
 	URL           string `json:"url" jsonschema:"URL to capture screenshot from"`
 	ContextName   string `json:"context_name,omitempty" jsonschema:"browser context to use (default: 'default')"`
 	Resize        string `json:"resize,omitempty" jsonschema:"resize parameters like '800x600', '800x600!' for exact size, or '50%x50%' for percentage"`
+	FullHeight    bool   `json:"full_height,omitempty" jsonschema:"capture full page height up to 10x the viewport height"`
 	UpdateCookies bool   `json:"update_cookies,omitempty" jsonschema:"automatically apply set-cookie headers from response to context"`
 }
 
@@ -43,6 +44,7 @@ type ScreenshotHTMLArgs struct {
 	HTMLContent   string `json:"html_content" jsonschema:"HTML content to render and screenshot"`
 	ContextName   string `json:"context_name,omitempty" jsonschema:"browser context to use (default: 'default')"`
 	Resize        string `json:"resize,omitempty" jsonschema:"resize parameters like '800x600', '800x600!' for exact size, or '50%x50%' for percentage"`
+	FullHeight    bool   `json:"full_height,omitempty" jsonschema:"capture full page height up to 10x the viewport height"`
 	UpdateCookies bool   `json:"update_cookies,omitempty" jsonschema:"automatically apply set-cookie headers from response to context"`
 }
 
@@ -242,6 +244,7 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 		TimeoutSeconds:  config.DefaultTimeout,
 		DomainWhitelist: config.DomainWhitelist,
 		ResizeParam:     args.Resize,
+		FullHeight:      args.FullHeight,
 		CustomHeaders:   config.Headers,
 		Cookies:         config.Cookies,
 		Debug:           globalDebug,
@@ -318,6 +321,7 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 		TimeoutSeconds:  config.DefaultTimeout,
 		DomainWhitelist: config.DomainWhitelist,
 		ResizeParam:     args.Resize,
+		FullHeight:      args.FullHeight,
 		CustomHeaders:   config.Headers,
 		Cookies:         config.Cookies,
 		Debug:           globalDebug,

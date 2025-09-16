@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -24,6 +25,7 @@ type RequestConfig struct {
 	TimeoutSeconds  int
 	DomainWhitelist []string
 	ResizeParam     string
+	FullHeight      bool
 	CustomHeaders   map[string]string
 	Cookies         []*proto.NetworkCookieParam // Cookies to set before navigation
 	Debug           bool
@@ -79,6 +81,7 @@ var globalCustomHeaders map[string]string
 var globalViewport string
 var globalTimeout int
 var globalDomains string
+var globalFullHeight bool
 
 func convertToJSONOutput(response *BrowserResponse) *JSONOutput {
 	output := &JSONOutput{
@@ -111,7 +114,7 @@ func parseCustomHeaders(headersJSON string) (map[string]string, error) {
 	return headers, nil
 }
 
-func parseRequestConfig(viewportParam, resizeParam, timeoutParam, domainsParam string) (*RequestConfig, error) {
+func parseRequestConfig(viewportParam, resizeParam, timeoutParam, domainsParam string, fullHeight bool) (*RequestConfig, error) {
 	config := &RequestConfig{}
 
 	// Parse viewport dimensions
@@ -139,8 +142,102 @@ func parseRequestConfig(viewportParam, resizeParam, timeoutParam, domainsParam s
 	config.ResizeParam = resizeParam
 	config.CustomHeaders = globalCustomHeaders
 	config.Debug = globalDebug
+	config.FullHeight = fullHeight
 
 	return config, nil
+}
+
+func adjustViewportForFullHeight(page *rod.Page, config *RequestConfig) error {
+	if config == nil {
+		return nil
+	}
+
+	metrics, err := proto.PageGetLayoutMetrics{}.Call(page)
+	if err != nil {
+		return fmt.Errorf("failed to get layout metrics: %w", err)
+	}
+
+	var contentHeight float64
+	if metrics.CSSContentSize != nil {
+		contentHeight = metrics.CSSContentSize.Height
+	} else if metrics.ContentSize != nil {
+		contentHeight = metrics.ContentSize.Height
+	}
+
+	targetHeight := int(math.Ceil(contentHeight))
+
+	// Determine the minimum height baseline
+	minHeight := config.ViewportHeight
+	if minHeight <= 0 && metrics.CSSVisualViewport != nil {
+		minHeight = int(math.Ceil(metrics.CSSVisualViewport.ClientHeight))
+	}
+	if minHeight <= 0 && metrics.CSSLayoutViewport != nil {
+		minHeight = metrics.CSSLayoutViewport.ClientHeight
+	}
+	if minHeight <= 0 {
+		minHeight = targetHeight
+	}
+	if minHeight <= 0 {
+		minHeight = 1
+	}
+
+	if targetHeight <= 0 {
+		targetHeight = minHeight
+	}
+
+	if targetHeight < minHeight {
+		targetHeight = minHeight
+	}
+
+	maxHeight := minHeight
+	if minHeight > 0 {
+		if minHeight > math.MaxInt/10 {
+			maxHeight = math.MaxInt
+		} else {
+			maxHeight = minHeight * 10
+		}
+	}
+
+	if maxHeight > 0 && targetHeight > maxHeight {
+		targetHeight = maxHeight
+	}
+
+	if targetHeight <= 0 {
+		return nil
+	}
+
+	width := config.ViewportWidth
+	if width <= 0 && metrics.CSSVisualViewport != nil {
+		width = int(math.Ceil(metrics.CSSVisualViewport.ClientWidth))
+	}
+	if width <= 0 && metrics.CSSLayoutViewport != nil {
+		width = metrics.CSSLayoutViewport.ClientWidth
+	}
+	if width <= 0 && metrics.CSSContentSize != nil {
+		width = int(math.Ceil(metrics.CSSContentSize.Width))
+	}
+	if width <= 0 {
+		width = 1024
+	}
+
+	if targetHeight == config.ViewportHeight && width == config.ViewportWidth {
+		return nil
+	}
+
+	err = page.SetViewport(&proto.EmulationSetDeviceMetricsOverride{
+		Width:             width,
+		Height:            targetHeight,
+		DeviceScaleFactor: 1.0,
+		Mobile:            false,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to set viewport for full height: %w", err)
+	}
+
+	config.ViewportWidth = width
+	config.ViewportHeight = targetHeight
+
+	return nil
 }
 
 type HijackConfig struct {
@@ -574,6 +671,12 @@ func executeBrowserRequest(url, htmlContent string, config *RequestConfig) (*Bro
 		return nil, err
 	}
 
+	if config.FullHeight {
+		if err := adjustViewportForFullHeight(page, config); err != nil {
+			return nil, err
+		}
+	}
+
 	response := &BrowserResponse{}
 
 	if config.CaptureCookies {
@@ -647,6 +750,7 @@ func main() {
 	listen := flag.String("listen", "localhost:8080", "Address to listen on for HTTP server")
 	viewport := flag.String("viewport", "", "Viewport dimensions for the browser (e.g. 1920x1080)")
 	resize := flag.String("resize", "", "Resize parameters (e.g. 100x200, 100x200!, 100x200#)")
+	fullHeight := flag.Bool("full-height", false, "Capture the full page height up to 10x the viewport height")
 	timeout := flag.Int("timeout", 0, "Timeout in seconds for page load and screenshot (0 = no timeout)")
 	domains := flag.String("domains", "", "Comma-separated list of allowed domains (e.g. example.com,*.cdn.com)")
 	headers := flag.String("headers", "", "JSON string of custom headers to add to the initial request (e.g. '{\"Authorization\":\"Bearer token\",\"Custom-Header\":\"value\"}')")
@@ -658,6 +762,7 @@ func main() {
 	globalViewport = *viewport
 	globalTimeout = *timeout
 	globalDomains = *domains
+	globalFullHeight = *fullHeight
 
 	// Parse and set global custom headers
 	var err error
@@ -690,7 +795,7 @@ func main() {
 		resizeParam = ""
 	}
 
-	config, err := parseRequestConfig(*viewport, resizeParam, strconv.Itoa(*timeout), *domains)
+	config, err := parseRequestConfig(*viewport, resizeParam, strconv.Itoa(*timeout), *domains, *fullHeight)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing parameters: %v\n", err)
 		os.Exit(1)

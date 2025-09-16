@@ -226,7 +226,9 @@ Available metrics:
 Control the browser viewport size before capturing the screenshot:
 
 - `--viewport WxH` - Set browser viewport dimensions (e.g. `1920x1080`)
+- `--full-height` - Expand the viewport to the full document height, using the viewport height as a minimum and capping at 10× that value
 - `?viewport=WxH` - HTTP query parameter for viewport size
+- `?full_height=true` - Enable full-height mode via HTTP (accepts any `strconv.ParseBool` value)
 
 Common viewport sizes:
 - Desktop: `1920x1080`, `1366x768`, `1280x1024`
@@ -295,4 +297,3 @@ You can also specify only width or height:
 For HTTP requests, use these URL-safe alternatives:
 - Use `^` instead of `#` for center crop: `800x600^`
 - Use `_` instead of `+` for crop offsets: `200x200_100_50`
-

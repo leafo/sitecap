@@ -82,7 +82,6 @@ func (m *RequestHistoryManager) GetLastRequest(contextName string, configManager
 	return m.GetRequest(lastRequestID)
 }
 
-
 func generateRequestID() string {
 	timestamp := time.Now().Format("20060102150405")
 
