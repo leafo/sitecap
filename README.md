@@ -185,6 +185,29 @@ sitecap --http --mcp --listen localhost:8080
 
 Both modes use the same tool definitions and configuration managers, ensuring consistent behavior regardless of transport.
 
+#### Available Tools
+
+- `configure_browser_context` – configure viewport, timeout, cookies, and headers for a named browsing context.
+- `list_browser_contexts` – list configured contexts and their active settings.
+- `capture_screenshot_from_url` – capture a screenshot by navigating to a URL.
+- `capture_screenshot_from_html` – render arbitrary HTML and capture a screenshot.
+- `extract_html_content` – retrieve the fully rendered HTML after JavaScript execution.
+- `get_last_browser_request` – fetch the most recent request details, including network and console data.
+
+#### Default Configuration via Flags
+
+When launching the MCP server, the standard command line flags (`--viewport`, `--timeout`, `--domains`, `--headers`, `--debug`, etc.) are applied as defaults for every browsing context. Use these flags to preconfigure the screenshot environment before clients connect:
+
+```bash
+# Start MCP server with a 1920x1080 viewport and 30s timeout
+sitecap --mcp --viewport 1920x1080 --timeout 30
+
+# Streamable HTTP MCP server with domain restrictions and extra headers
+sitecap --http --mcp --domains "example.com,*.cdn.com" --headers '{"X-Token":"secret"}'
+```
+
+Clients can still override or extend these defaults by calling `configure_browser_context`, but the initial values come from the flags provided at startup.
+
 ### Metrics
 
 The HTTP server exposes Prometheus-compatible metrics at `/metrics`:
