@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type responseWriter struct {
@@ -149,11 +151,20 @@ func handleScreenshot(w http.ResponseWriter, r *http.Request) {
 	w.Write(response.Screenshot)
 }
 
-func StartHTTPServer(listen string, debug bool) {
+func StartHTTPServer(listen string, debug bool, enableMCP bool) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handleScreenshot)
 	mux.HandleFunc("/html", handleHTML)
 	mux.Handle("/metrics", &metrics)
+
+	if enableMCP {
+		server := newMCPServer()
+		handler := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
+			return server
+		}, nil)
+		mux.Handle("/mcp", handler)
+		mux.Handle("/mcp/", handler)
+	}
 
 	handler := loggingMiddleware(mux)
 
@@ -164,6 +175,9 @@ func StartHTTPServer(listen string, debug bool) {
 		fmt.Printf("Custom headers will be applied to all requests: %+v\n", globalCustomHeaders)
 	}
 	fmt.Printf("Metrics: http://%s/metrics\n", listen)
+	if enableMCP {
+		fmt.Printf("MCP (streamable): http://%s/mcp\n", listen)
+	}
 	if debug {
 		fmt.Println("Debug mode enabled - all network requests will be logged")
 	}

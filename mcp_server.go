@@ -18,6 +18,16 @@ var (
 func StartMCPServer() {
 	log.Println("Starting Sitecap MCP server...")
 
+	server := newMCPServer()
+
+	// Run the server with stdio transport
+	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+		fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func newMCPServer() *mcp.Server {
 	configManager = NewContextConfigManager()
 	requestManager = NewRequestHistoryManager()
 
@@ -29,11 +39,7 @@ func StartMCPServer() {
 
 	registerTools(server)
 
-	// Run the server with stdio transport
-	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
-		fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)
-		os.Exit(1)
-	}
+	return server
 }
 
 // registerTools registers all MCP tools
