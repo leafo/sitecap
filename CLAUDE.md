@@ -65,7 +65,7 @@ go test -v
 ### Key Dependencies
 
 - `github.com/go-rod/rod`: Chrome DevTools Protocol automation
-- `github.com/davidbyttow/govips/v2/vips`: High-performance image processing
+- `github.com/cshum/vipsgen/vips`: High-performance image processing
 - `github.com/modelcontextprotocol/go-sdk`: Model Context Protocol server implementation
 
 ### Request Flow
@@ -150,4 +150,3 @@ sitecap --headers '{"Authorization":"Bearer token","User-Agent":"Custom Agent"}'
 - `WxH#` or `WxH^` - Center crop to exact dimensions
 - `P%xP%` - Percentage scaling
 - `WxH+X+Y` or `WxH_X_Y` - Manual crop with offset
-

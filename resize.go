@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/davidbyttow/govips/v2/vips"
+	"github.com/cshum/vipsgen/vips"
 )
 
 var (
@@ -118,8 +118,11 @@ func parseResizeString(resize string) (*ResizeParams, error) {
 	return params, nil
 }
 
-func getImageFormat(buf []byte) (vips.ImageType, error) {
-	format := vips.DetermineImageType(buf)
+func getImageFormat(image *vips.Image) (vips.ImageType, error) {
+	if image == nil {
+		return vips.ImageTypeUnknown, fmt.Errorf("image is nil")
+	}
+	format := image.Format()
 	if format == vips.ImageTypeUnknown {
 		return format, fmt.Errorf("unknown image format")
 	}
@@ -128,44 +131,39 @@ func getImageFormat(buf []byte) (vips.ImageType, error) {
 
 func getContentType(imageType vips.ImageType) string {
 	switch imageType {
-	case vips.ImageTypeJPEG:
+	case vips.ImageTypeJpeg:
 		return "image/jpeg"
-	case vips.ImageTypePNG:
+	case vips.ImageTypePng:
 		return "image/png"
-	case vips.ImageTypeWEBP:
+	case vips.ImageTypeWebp:
 		return "image/webp"
-	case vips.ImageTypeGIF:
+	case vips.ImageTypeGif:
 		return "image/gif"
-	case vips.ImageTypeTIFF:
+	case vips.ImageTypeTiff:
 		return "image/tiff"
 	default:
 		return "application/octet-stream"
 	}
 }
 
-func exportImage(image *vips.ImageRef, format vips.ImageType) ([]byte, error) {
+func exportImage(image *vips.Image, format vips.ImageType) ([]byte, error) {
 	switch format {
-	case vips.ImageTypeJPEG:
-		data, _, err := image.ExportJpeg(&vips.JpegExportParams{
-			Quality: 95,
-		})
-		return data, err
-	case vips.ImageTypePNG:
-		data, _, err := image.ExportPng(&vips.PngExportParams{
-			Compression: 6,
-		})
-		return data, err
-	case vips.ImageTypeWEBP:
-		data, _, err := image.ExportWebp(&vips.WebpExportParams{
-			Quality: 90,
-		})
-		return data, err
-	case vips.ImageTypeGIF:
-		data, _, err := image.ExportGIF(&vips.GifExportParams{})
-		return data, err
-	case vips.ImageTypeTIFF:
-		data, _, err := image.ExportTiff(&vips.TiffExportParams{})
-		return data, err
+	case vips.ImageTypeJpeg:
+		opts := vips.DefaultJpegsaveBufferOptions()
+		opts.Q = 95
+		return image.JpegsaveBuffer(opts)
+	case vips.ImageTypePng:
+		opts := vips.DefaultPngsaveBufferOptions()
+		opts.Compression = 6
+		return image.PngsaveBuffer(opts)
+	case vips.ImageTypeWebp:
+		opts := vips.DefaultWebpsaveBufferOptions()
+		opts.Q = 90
+		return image.WebpsaveBuffer(opts)
+	case vips.ImageTypeGif:
+		return image.GifsaveBuffer(nil)
+	case vips.ImageTypeTiff:
+		return image.TiffsaveBuffer(nil)
 	default:
 		return nil, fmt.Errorf("unsupported image format")
 	}
@@ -175,17 +173,16 @@ func resizeImage(buf []byte, params *ResizeParams) ([]byte, vips.ImageType, erro
 	// Initialize vips if not already done
 	initVips()
 
-	// Determine input format
-	format, err := getImageFormat(buf)
+	image, err := vips.NewImageFromBuffer(buf, nil)
 	if err != nil {
 		return nil, vips.ImageTypeUnknown, err
 	}
-
-	image, err := vips.NewImageFromBuffer(buf)
-	if err != nil {
-		return nil, format, err
-	}
 	defer image.Close()
+
+	format, err := getImageFormat(image)
+	if err != nil {
+		return nil, vips.ImageTypeUnknown, err
+	}
 
 	// manual cropping, no scaling takes place
 	if params.Crop {
@@ -225,13 +222,21 @@ func resizeImage(buf []byte, params *ResizeParams) ([]byte, vips.ImageType, erro
 					scaleRatio = math.Min(widthRatio, heightRatio)
 				}
 			}
-			err = image.Resize(scaleRatio, vips.KernelAuto)
-			if err != nil {
+			if scaleRatio <= 0 {
+				return nil, format, fmt.Errorf("invalid scale ratio")
+			}
+			if err := image.Resize(scaleRatio, nil); err != nil {
 				return nil, format, err
 			}
 		} else {
-			err = image.ResizeWithVScale(float64(targetWidth)/float64(width), float64(targetHeight)/float64(height), vips.KernelAuto)
-			if err != nil {
+			widthScale := float64(targetWidth) / float64(width)
+			heightScale := float64(targetHeight) / float64(height)
+			if widthScale <= 0 || heightScale <= 0 {
+				return nil, format, fmt.Errorf("invalid scale ratio")
+			}
+			opts := vips.DefaultResizeOptions()
+			opts.Vscale = heightScale
+			if err := image.Resize(widthScale, opts); err != nil {
 				return nil, format, err
 			}
 		}
