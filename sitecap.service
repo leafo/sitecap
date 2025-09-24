@@ -14,24 +14,21 @@ RestartSec=5
 
 # Security settings
 NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectSystem=strict
+PrivateTmp=no
+ProtectSystem=full
 ProtectHome=yes
-ReadWritePaths=/tmp
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictRealtime=yes
-RestrictNamespaces=yes
+RestrictNamespaces=no
 LockPersonality=yes
-MemoryDenyWriteExecute=yes
+MemoryDenyWriteExecute=no
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-SystemCallFilter=@system-service
-SystemCallErrorNumber=EPERM
 
 # Resource limits
 LimitNOFILE=65536
-PrivateDevices=yes
+PrivateDevices=no
 
 # Working directory
 WorkingDirectory=/var/lib/sitecap

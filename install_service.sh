@@ -37,6 +37,12 @@ LISTEN_ADDR=${LISTEN_ADDR:-"localhost:7701"}
 
 echo -e "${YELLOW}Installing sitecap service...${NC}"
 
+# Stop existing service if running
+if sudo systemctl is-active --quiet sitecap 2>/dev/null; then
+    echo "Stopping existing sitecap service..."
+    sudo systemctl stop sitecap
+fi
+
 # Create user and directories
 echo "Creating sitecap user and directories..."
 sudo useradd --system --shell /bin/false --home /var/lib/sitecap sitecap 2>/dev/null || true
