@@ -32,8 +32,8 @@ fi
 
 # Get listen address from user
 echo ""
-read -p "Enter listen address (default: localhost:8080): " LISTEN_ADDR
-LISTEN_ADDR=${LISTEN_ADDR:-"localhost:8080"}
+read -p "Enter listen address (default: localhost:7701): " LISTEN_ADDR
+LISTEN_ADDR=${LISTEN_ADDR:-"localhost:7701"}
 
 echo -e "${YELLOW}Installing sitecap service...${NC}"
 
