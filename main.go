@@ -23,6 +23,7 @@ type RequestConfig struct {
 	ViewportWidth   int
 	ViewportHeight  int
 	TimeoutSeconds  int
+	WaitSeconds     int
 	DomainWhitelist []string
 	ResizeParam     string
 	FullHeight      bool
@@ -80,6 +81,7 @@ var globalDebug bool
 var globalCustomHeaders map[string]string
 var globalViewport string
 var globalTimeout int
+var globalWait int
 var globalDomains string
 var globalFullHeight bool
 
@@ -114,7 +116,7 @@ func parseCustomHeaders(headersJSON string) (map[string]string, error) {
 	return headers, nil
 }
 
-func parseRequestConfig(viewportParam, resizeParam, timeoutParam, domainsParam string, fullHeight bool) (*RequestConfig, error) {
+func parseRequestConfig(viewportParam, resizeParam, timeoutParam, waitParam, domainsParam string, fullHeight bool) (*RequestConfig, error) {
 	config := &RequestConfig{}
 
 	// Parse viewport dimensions
@@ -131,6 +133,13 @@ func parseRequestConfig(viewportParam, resizeParam, timeoutParam, domainsParam s
 		return nil, fmt.Errorf("invalid timeout parameter: %v", err)
 	}
 	config.TimeoutSeconds = timeoutSeconds
+
+	// Parse wait time
+	waitSeconds, err := parseTimeoutString(waitParam)
+	if err != nil {
+		return nil, fmt.Errorf("invalid wait parameter: %v", err)
+	}
+	config.WaitSeconds = waitSeconds
 
 	// Parse domain whitelist
 	domainWhitelist, err := ParseDomainWhitelist(domainsParam)
@@ -671,6 +680,11 @@ func executeBrowserRequest(url, htmlContent string, config *RequestConfig) (*Bro
 		return nil, err
 	}
 
+	// Wait additional time if specified
+	if config.WaitSeconds > 0 {
+		time.Sleep(time.Duration(config.WaitSeconds) * time.Second)
+	}
+
 	if config.FullHeight {
 		if err := adjustViewportForFullHeight(page, config); err != nil {
 			return nil, err
@@ -752,6 +766,7 @@ func main() {
 	resize := flag.String("resize", "", "Resize parameters (e.g. 100x200, 100x200!, 100x200#)")
 	fullHeight := flag.Bool("full-height", false, "Capture the full page height up to 10x the viewport height")
 	timeout := flag.Int("timeout", 0, "Timeout in seconds for page load and screenshot (0 = no timeout)")
+	wait := flag.Int("wait", 0, "Wait time in seconds after page load before taking screenshot (0 = no wait)")
 	domains := flag.String("domains", "", "Comma-separated list of allowed domains (e.g. example.com,*.cdn.com)")
 	headers := flag.String("headers", "", "JSON string of custom headers to add to the initial request (e.g. '{\"Authorization\":\"Bearer token\",\"Custom-Header\":\"value\"}')")
 	debug := flag.Bool("debug", false, "Enable debug logging of all network requests")
@@ -761,6 +776,7 @@ func main() {
 	globalDebug = *debug
 	globalViewport = *viewport
 	globalTimeout = *timeout
+	globalWait = *wait
 	globalDomains = *domains
 	globalFullHeight = *fullHeight
 
@@ -795,7 +811,7 @@ func main() {
 		resizeParam = ""
 	}
 
-	config, err := parseRequestConfig(*viewport, resizeParam, strconv.Itoa(*timeout), *domains, *fullHeight)
+	config, err := parseRequestConfig(*viewport, resizeParam, strconv.Itoa(*timeout), strconv.Itoa(*wait), *domains, *fullHeight)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing parameters: %v\n", err)
 		os.Exit(1)

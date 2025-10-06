@@ -27,6 +27,7 @@ type ConfigureContextArgs struct {
 	ContextName string            `json:"context_name,omitempty" jsonschema:"name of the browser context (default: 'default')"`
 	Viewport    *string           `json:"viewport,omitempty" jsonschema:"viewport dimensions like '1920x1080' (default: '1920x1080')"`
 	Timeout     *int              `json:"timeout,omitempty" jsonschema:"timeout in seconds for page loads (default: 30)"`
+	Wait        *int              `json:"wait,omitempty" jsonschema:"wait time in seconds after page load (default: 0)"`
 	Domains     *string           `json:"domains,omitempty" jsonschema:"comma-separated list of allowed domains for request filtering"`
 	Cookies     []CookieInput     `json:"cookies,omitempty" jsonschema:"array of cookie objects to set in the browser context"`
 	Headers     map[string]string `json:"headers,omitempty" jsonschema:"default HTTP headers to send with all requests"`
@@ -37,6 +38,7 @@ type ScreenshotArgs struct {
 	ContextName   string `json:"context_name,omitempty" jsonschema:"browser context to use (default: 'default')"`
 	Resize        string `json:"resize,omitempty" jsonschema:"resize parameters like '800x600', '800x600!' for exact size, or '50%x50%' for percentage"`
 	FullHeight    bool   `json:"full_height,omitempty" jsonschema:"capture full page height up to 10x the viewport height"`
+	Wait          *int   `json:"wait,omitempty" jsonschema:"wait time in seconds after page load before screenshot (overrides context default)"`
 	UpdateCookies bool   `json:"update_cookies,omitempty" jsonschema:"automatically apply set-cookie headers from response to context"`
 }
 
@@ -45,12 +47,14 @@ type ScreenshotHTMLArgs struct {
 	ContextName   string `json:"context_name,omitempty" jsonschema:"browser context to use (default: 'default')"`
 	Resize        string `json:"resize,omitempty" jsonschema:"resize parameters like '800x600', '800x600!' for exact size, or '50%x50%' for percentage"`
 	FullHeight    bool   `json:"full_height,omitempty" jsonschema:"capture full page height up to 10x the viewport height"`
+	Wait          *int   `json:"wait,omitempty" jsonschema:"wait time in seconds after page load before screenshot (overrides context default)"`
 	UpdateCookies bool   `json:"update_cookies,omitempty" jsonschema:"automatically apply set-cookie headers from response to context"`
 }
 
 type GetHTMLArgs struct {
 	URL           string `json:"url" jsonschema:"URL to get rendered HTML content from"`
 	ContextName   string `json:"context_name,omitempty" jsonschema:"browser context to use (default: 'default')"`
+	Wait          *int   `json:"wait,omitempty" jsonschema:"wait time in seconds after page load before capturing HTML (overrides context default)"`
 	UpdateCookies bool   `json:"update_cookies,omitempty" jsonschema:"automatically apply set-cookie headers from response to context"`
 }
 
@@ -177,6 +181,11 @@ func handleConfigureContext(ctx context.Context, request *mcp.CallToolRequest, a
 		config.DefaultTimeout = *args.Timeout
 	}
 
+	// Conditionally update wait if provided
+	if args.Wait != nil {
+		config.DefaultWait = *args.Wait
+	}
+
 	// Conditionally update domain whitelist if provided
 	if args.Domains != nil {
 		domainWhitelist, err := ParseDomainWhitelist(*args.Domains)
@@ -204,6 +213,7 @@ func handleConfigureContext(ctx context.Context, request *mcp.CallToolRequest, a
 	resultConfig := map[string]interface{}{
 		"viewport": fmt.Sprintf("%dx%d", config.DefaultViewport.Width, config.DefaultViewport.Height),
 		"timeout":  config.DefaultTimeout,
+		"wait":     config.DefaultWait,
 		"domains":  config.DomainWhitelist,
 		"cookies":  config.Cookies,
 		"headers":  config.Headers,
@@ -237,11 +247,18 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 
 	startTime := time.Now()
 
+	// Determine wait time (use args.Wait when provided, otherwise use context default)
+	waitSeconds := config.DefaultWait
+	if args.Wait != nil {
+		waitSeconds = *args.Wait
+	}
+
 	// Create request config
 	requestConfig := &RequestConfig{
 		ViewportWidth:   config.DefaultViewport.Width,
 		ViewportHeight:  config.DefaultViewport.Height,
 		TimeoutSeconds:  config.DefaultTimeout,
+		WaitSeconds:     waitSeconds,
 		DomainWhitelist: config.DomainWhitelist,
 		ResizeParam:     args.Resize,
 		FullHeight:      args.FullHeight,
@@ -314,11 +331,18 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 
 	startTime := time.Now()
 
+	// Determine wait time (use args.Wait when provided, otherwise use context default)
+	waitSeconds := config.DefaultWait
+	if args.Wait != nil {
+		waitSeconds = *args.Wait
+	}
+
 	// Create request config
 	requestConfig := &RequestConfig{
 		ViewportWidth:   config.DefaultViewport.Width,
 		ViewportHeight:  config.DefaultViewport.Height,
 		TimeoutSeconds:  config.DefaultTimeout,
+		WaitSeconds:     waitSeconds,
 		DomainWhitelist: config.DomainWhitelist,
 		ResizeParam:     args.Resize,
 		FullHeight:      args.FullHeight,
@@ -391,10 +415,17 @@ func handleMCPGetHTML(ctx context.Context, request *mcp.CallToolRequest, args Ge
 
 	startTime := time.Now()
 
+	// Determine wait time (use args.Wait when provided, otherwise use context default)
+	waitSeconds := config.DefaultWait
+	if args.Wait != nil {
+		waitSeconds = *args.Wait
+	}
+
 	requestConfig := &RequestConfig{
 		ViewportWidth:   config.DefaultViewport.Width,
 		ViewportHeight:  config.DefaultViewport.Height,
 		TimeoutSeconds:  config.DefaultTimeout,
+		WaitSeconds:     waitSeconds,
 		DomainWhitelist: config.DomainWhitelist,
 		CustomHeaders:   config.Headers,
 		Cookies:         config.Cookies,

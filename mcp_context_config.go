@@ -12,6 +12,7 @@ type BrowserContextConfig struct {
 	Name            string
 	DefaultViewport ViewportConfig
 	DefaultTimeout  int
+	DefaultWait     int
 	DomainWhitelist []string
 	Cookies         []*proto.NetworkCookieParam
 	Headers         map[string]string
@@ -26,6 +27,7 @@ func DefaultBrowserContextConfig() *BrowserContextConfig {
 	// Start with default values
 	viewport := ViewportConfig{Width: 1366, Height: 854}
 	timeout := 30
+	wait := 0
 	var domainWhitelist []string
 	headers := make(map[string]string)
 
@@ -38,6 +40,10 @@ func DefaultBrowserContextConfig() *BrowserContextConfig {
 
 	if globalTimeout > 0 {
 		timeout = globalTimeout
+	}
+
+	if globalWait > 0 {
+		wait = globalWait
 	}
 
 	if globalDomains != "" {
@@ -54,6 +60,7 @@ func DefaultBrowserContextConfig() *BrowserContextConfig {
 		Name:            "default",
 		DefaultViewport: viewport,
 		DefaultTimeout:  timeout,
+		DefaultWait:     wait,
 		DomainWhitelist: domainWhitelist,
 		Cookies:         []*proto.NetworkCookieParam{},
 		Headers:         headers,
@@ -175,6 +182,7 @@ func (m *ContextConfigManager) ListContexts() map[string]interface{} {
 			"request_count": len(context.RequestHistory),
 			"viewport":      context.DefaultViewport,
 			"timeout":       context.DefaultTimeout,
+			"wait":          context.DefaultWait,
 			"cookies":       context.Cookies,
 			"headers":       context.Headers,
 		}

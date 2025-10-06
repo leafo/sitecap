@@ -13,7 +13,7 @@ go install github.com/leafo/sitecap@latest
 ### Command Line Mode
 
 ```bash
-sitecap [--viewport WxH] [--resize WxH] [--timeout N] [--domains list] [--debug] <URL> > screenshot.png
+sitecap [--viewport WxH] [--resize WxH] [--timeout N] [--wait N] [--domains list] [--debug] <URL> > screenshot.png
 sitecap [options] - < input.html > screenshot.png
 sitecap [options] --html <URL> > page.html
 sitecap --mcp
@@ -34,6 +34,9 @@ sitecap --viewport 375x667 https://example.com > mobile.png
 # Set 30 second timeout for slow-loading pages
 sitecap --timeout 30 https://slow-site.com > slow.png
 
+# Wait 5 seconds after load before capturing (let animations settle)
+sitecap --wait 5 https://example.com > delayed.png
+
 # Only load resources from specific domains
 sitecap --domains "example.com,*.cloudfront.net" https://example.com > filtered.png
 
@@ -41,7 +44,7 @@ sitecap --domains "example.com,*.cloudfront.net" https://example.com > filtered.
 sitecap --debug https://example.com > debug.png 2>requests.log
 
 # Full example with all parameters
-sitecap --viewport 1920x1080 --resize 800x600 --timeout 15 --domains "example.com,cdn.example.com" --debug https://example.com > complete.png
+sitecap --viewport 1920x1080 --resize 800x600 --timeout 15 --wait 5 --domains "example.com,cdn.example.com" --debug https://example.com > complete.png
 
 # Force exact dimensions (ignore aspect ratio)
 sitecap --resize 800x600! https://example.com > stretched.png
@@ -132,17 +135,20 @@ curl "http://localhost:8080/?url=https://example.com&viewport=375x667" > mobile.
 # Set 30 second timeout for slow pages
 curl "http://localhost:8080/?url=https://slow-site.com&timeout=30" > slow.png
 
+# Wait 5 seconds after load before capturing
+curl "http://localhost:8080/?url=https://example.com&wait=5" > delayed.png
+
 # Whitelist specific domains only
 curl "http://localhost:8080/?url=https://example.com&domains=example.com,*.cloudfront.net" > filtered.png
 
 # Full example with all parameters
-curl "http://localhost:8080/?url=https://example.com&viewport=1920x1080&resize=800x600&timeout=15&domains=example.com,cdn.example.com" > full.png
+curl "http://localhost:8080/?url=https://example.com&viewport=1920x1080&resize=800x600&timeout=15&wait=5&domains=example.com,cdn.example.com" > full.png
 
 # Get HTML content instead of screenshot
 curl "http://localhost:8080/html?url=https://example.com" > example.html
 
-# Get HTML with viewport and domain filtering
-curl "http://localhost:8080/html?url=https://example.com&viewport=1920x1080&domains=example.com,*.cdn.com" > filtered.html
+# Get HTML with viewport, wait, and domain filtering
+curl "http://localhost:8080/html?url=https://example.com&viewport=1920x1080&wait=3&domains=example.com,*.cdn.com" > filtered.html
 ```
 
 **Debug Mode**: Start the server with `--debug` flag to see all network requests in the server logs:
@@ -187,16 +193,16 @@ Both modes use the same tool definitions and configuration managers, ensuring co
 
 #### Available Tools
 
-- `configure_browser_context` – configure viewport, timeout, cookies, and headers for a named browsing context.
+- `configure_browser_context` – configure viewport, timeout, wait, cookies, and headers for a named browsing context.
 - `list_browser_contexts` – list configured contexts and their active settings.
-- `capture_screenshot_from_url` – capture a screenshot by navigating to a URL.
-- `capture_screenshot_from_html` – render arbitrary HTML and capture a screenshot.
-- `extract_html_content` – retrieve the fully rendered HTML after JavaScript execution.
+- `capture_screenshot_from_url` – capture a screenshot by navigating to a URL (supports per-request `wait`).
+- `capture_screenshot_from_html` – render arbitrary HTML and capture a screenshot (supports per-request `wait`).
+- `extract_html_content` – retrieve the fully rendered HTML after JavaScript execution (supports per-request `wait`).
 - `get_last_browser_request` – fetch the most recent request details, including network and console data.
 
 #### Default Configuration via Flags
 
-When launching the MCP server, the standard command line flags (`--viewport`, `--timeout`, `--domains`, `--headers`, `--debug`, etc.) are applied as defaults for every browsing context. Use these flags to preconfigure the screenshot environment before clients connect:
+When launching the MCP server, the standard command line flags (`--viewport`, `--timeout`, `--wait`, `--domains`, `--headers`, `--debug`, etc.) are applied as defaults for every browsing context. Use these flags to preconfigure the screenshot environment before clients connect:
 
 ```bash
 # Start MCP server with a 1920x1080 viewport and 30s timeout
@@ -206,7 +212,7 @@ sitecap --mcp --viewport 1920x1080 --timeout 30
 sitecap --http --mcp --domains "example.com,*.cdn.com" --headers '{"X-Token":"secret"}'
 ```
 
-Clients can still override or extend these defaults by calling `configure_browser_context`, but the initial values come from the flags provided at startup.
+Clients can still override or extend these defaults by calling `configure_browser_context`, including setting or clearing the default wait, but the initial values come from the flags provided at startup.
 
 ### Metrics
 

@@ -78,6 +78,7 @@ func handleHTML(w http.ResponseWriter, r *http.Request) {
 
 	viewportParam := r.URL.Query().Get("viewport")
 	timeoutParam := r.URL.Query().Get("timeout")
+	waitParam := r.URL.Query().Get("wait")
 	domainsParam := r.URL.Query().Get("domains")
 	fullHeightParam := r.URL.Query().Get("full_height")
 	fullHeight := globalFullHeight
@@ -91,7 +92,7 @@ func handleHTML(w http.ResponseWriter, r *http.Request) {
 		fullHeight = parsed
 	}
 
-	config, err := parseRequestConfig(viewportParam, "", timeoutParam, domainsParam, fullHeight)
+	config, err := parseRequestConfig(viewportParam, "", timeoutParam, waitParam, domainsParam, fullHeight)
 	if err != nil {
 		metrics.FailedRequests.Add(1)
 		http.Error(w, fmt.Sprintf("Invalid parameters: %v", err), http.StatusBadRequest)
@@ -137,6 +138,7 @@ func handleScreenshot(w http.ResponseWriter, r *http.Request) {
 	viewportParam := r.URL.Query().Get("viewport")
 	resizeParam := r.URL.Query().Get("resize")
 	timeoutParam := r.URL.Query().Get("timeout")
+	waitParam := r.URL.Query().Get("wait")
 	domainsParam := r.URL.Query().Get("domains")
 	fullHeightParam := r.URL.Query().Get("full_height")
 	fullHeight := globalFullHeight
@@ -150,7 +152,7 @@ func handleScreenshot(w http.ResponseWriter, r *http.Request) {
 		fullHeight = parsed
 	}
 
-	config, err := parseRequestConfig(viewportParam, resizeParam, timeoutParam, domainsParam, fullHeight)
+	config, err := parseRequestConfig(viewportParam, resizeParam, timeoutParam, waitParam, domainsParam, fullHeight)
 	if err != nil {
 		metrics.FailedRequests.Add(1)
 		http.Error(w, fmt.Sprintf("Invalid parameters: %v", err), http.StatusBadRequest)
