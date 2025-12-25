@@ -1,7 +1,11 @@
-.PHONY: build install run test test_html test_mcp
+.PHONY: build install run test test_html test_mcp release
+
+BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+COMMIT_HASH := $(shell git rev-parse --short HEAD)
+LDFLAGS := -ldflags "-X main.buildDate=$(BUILD_DATE) -X main.commitHash=$(COMMIT_HASH)"
 
 build:
-	go build -o sitecap
+	go build $(LDFLAGS) -o sitecap
 
 run: build
 	./sitecap --debug --http --listen localhost:9191
@@ -17,4 +21,7 @@ test_mcp: build
 	npx @modelcontextprotocol/inspector ./sitecap  -mcp
 
 install:
-	GONOPROXY=github.com/leafo/sitecap go install github.com/leafo/sitecap@latest
+	go install $(LDFLAGS) .
+
+release:
+	gh release create "$$(date +%Y-%m-%d)" --generate-notes --title "Release $$(date +%Y-%m-%d)"

@@ -19,6 +19,12 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 )
 
+// Version information set by ldflags at build time
+var (
+	buildDate = "unknown"
+	commitHash = "unknown"
+)
+
 type RequestConfig struct {
 	ViewportWidth   int
 	ViewportHeight  int
@@ -770,7 +776,13 @@ func main() {
 	domains := flag.String("domains", "", "Comma-separated list of allowed domains (e.g. example.com,*.cdn.com)")
 	headers := flag.String("headers", "", "JSON string of custom headers to add to the initial request (e.g. '{\"Authorization\":\"Bearer token\",\"Custom-Header\":\"value\"}')")
 	debug := flag.Bool("debug", false, "Enable debug logging of all network requests")
+	version := flag.Bool("version", false, "Print version information and exit")
 	flag.Parse()
+
+	if *version {
+		fmt.Printf("sitecap\n  build date: %s\n  commit: %s\n", buildDate, commitHash)
+		return
+	}
 
 	// Set global flags
 	globalDebug = *debug
