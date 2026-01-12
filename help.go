@@ -47,6 +47,7 @@ OPTIONS
   Browser Configuration:
     --viewport WxH      Set browser viewport dimensions (e.g., 1920x1080)
                         Common: 1920x1080 (desktop), 375x667 (mobile)
+    --color-scheme VAL  Emulate color scheme preference: dark or light
     --full-height       Capture full page height (up to 10x viewport height)
     --timeout N         Timeout in seconds for page load (0 = no timeout)
     --wait N            Wait N seconds after page load before capture
@@ -113,6 +114,10 @@ EXAMPLES
     sitecap --timeout 30 https://slow-site.com > slow.png
     sitecap --wait 5 https://example.com > delayed.png
 
+  Color Scheme Emulation:
+    sitecap --color-scheme dark https://example.com > dark.png
+    sitecap --color-scheme light https://example.com > light.png
+
   Resize Operations:
     sitecap --resize 800x600 https://example.com > resized.png
     sitecap --resize 50%x50% https://example.com > half.png
@@ -138,7 +143,7 @@ EXAMPLES
 
   Advanced:
     sitecap --viewport 1920x1080 --resize 800x600 --timeout 30 \
-            --wait 2 --domains "site.com,*.cdn.com" \
+            --wait 2 --color-scheme dark --domains "site.com,*.cdn.com" \
             --headers '{"X-Token":"secret"}' --debug \
             https://example.com > screenshot.png
 
@@ -148,6 +153,7 @@ HTTP API
     Screenshot (GET /):
         url             Required. URL to capture
         viewport        Browser viewport (e.g., 1920x1080)
+        color_scheme    Color scheme preference (dark or light)
         resize          Resize parameters (see RESIZE SYNTAX)
         full_height     Capture full page (true/false)
         timeout         Timeout in seconds
@@ -181,7 +187,7 @@ MCP TOOLS
         Retrieve details of the most recent request including network
         and console data
 
-    CLI flags (--viewport, --timeout, --wait, --domains, --headers) set
+    CLI flags (--viewport, --timeout, --wait, --domains, --headers, --color-scheme) set
     defaults for MCP contexts. Clients can override via configure_browser_context.
 
 EXIT CODES

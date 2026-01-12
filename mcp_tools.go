@@ -31,31 +31,35 @@ type ConfigureContextArgs struct {
 	Domains     *string           `json:"domains,omitempty" jsonschema:"comma-separated list of allowed domains for request filtering"`
 	Cookies     []CookieInput     `json:"cookies,omitempty" jsonschema:"array of cookie objects to set in the browser context"`
 	Headers     map[string]string `json:"headers,omitempty" jsonschema:"default HTTP headers to send with all requests"`
+	ColorScheme *string           `json:"color_scheme,omitempty" jsonschema:"emulate color scheme preference: 'dark' or 'light' (sets context default)"`
 }
 
 type ScreenshotArgs struct {
-	URL           string `json:"url" jsonschema:"URL to capture screenshot from"`
-	ContextName   string `json:"context_name,omitempty" jsonschema:"browser context to use (default: 'default')"`
-	Resize        string `json:"resize,omitempty" jsonschema:"resize parameters like '800x600', '800x600!' for exact size, or '50%x50%' for percentage"`
-	FullHeight    bool   `json:"full_height,omitempty" jsonschema:"capture full page height up to 10x the viewport height"`
-	Wait          *int   `json:"wait,omitempty" jsonschema:"wait time in seconds after page load before screenshot (overrides context default)"`
-	UpdateCookies bool   `json:"update_cookies,omitempty" jsonschema:"automatically apply set-cookie headers from response to context"`
+	URL           string  `json:"url" jsonschema:"URL to capture screenshot from"`
+	ContextName   string  `json:"context_name,omitempty" jsonschema:"browser context to use (default: 'default')"`
+	Resize        string  `json:"resize,omitempty" jsonschema:"resize parameters like '800x600', '800x600!' for exact size, or '50%x50%' for percentage"`
+	FullHeight    bool    `json:"full_height,omitempty" jsonschema:"capture full page height up to 10x the viewport height"`
+	Wait          *int    `json:"wait,omitempty" jsonschema:"wait time in seconds after page load before screenshot (overrides context default)"`
+	UpdateCookies bool    `json:"update_cookies,omitempty" jsonschema:"automatically apply set-cookie headers from response to context"`
+	ColorScheme   *string `json:"color_scheme,omitempty" jsonschema:"emulate color scheme preference: 'dark' or 'light' (overrides context default)"`
 }
 
 type ScreenshotHTMLArgs struct {
-	HTMLContent   string `json:"html_content" jsonschema:"HTML content to render and screenshot"`
-	ContextName   string `json:"context_name,omitempty" jsonschema:"browser context to use (default: 'default')"`
-	Resize        string `json:"resize,omitempty" jsonschema:"resize parameters like '800x600', '800x600!' for exact size, or '50%x50%' for percentage"`
-	FullHeight    bool   `json:"full_height,omitempty" jsonschema:"capture full page height up to 10x the viewport height"`
-	Wait          *int   `json:"wait,omitempty" jsonschema:"wait time in seconds after page load before screenshot (overrides context default)"`
-	UpdateCookies bool   `json:"update_cookies,omitempty" jsonschema:"automatically apply set-cookie headers from response to context"`
+	HTMLContent   string  `json:"html_content" jsonschema:"HTML content to render and screenshot"`
+	ContextName   string  `json:"context_name,omitempty" jsonschema:"browser context to use (default: 'default')"`
+	Resize        string  `json:"resize,omitempty" jsonschema:"resize parameters like '800x600', '800x600!' for exact size, or '50%x50%' for percentage"`
+	FullHeight    bool    `json:"full_height,omitempty" jsonschema:"capture full page height up to 10x the viewport height"`
+	Wait          *int    `json:"wait,omitempty" jsonschema:"wait time in seconds after page load before screenshot (overrides context default)"`
+	UpdateCookies bool    `json:"update_cookies,omitempty" jsonschema:"automatically apply set-cookie headers from response to context"`
+	ColorScheme   *string `json:"color_scheme,omitempty" jsonschema:"emulate color scheme preference: 'dark' or 'light' (overrides context default)"`
 }
 
 type GetHTMLArgs struct {
-	URL           string `json:"url" jsonschema:"URL to get rendered HTML content from"`
-	ContextName   string `json:"context_name,omitempty" jsonschema:"browser context to use (default: 'default')"`
-	Wait          *int   `json:"wait,omitempty" jsonschema:"wait time in seconds after page load before capturing HTML (overrides context default)"`
-	UpdateCookies bool   `json:"update_cookies,omitempty" jsonschema:"automatically apply set-cookie headers from response to context"`
+	URL           string  `json:"url" jsonschema:"URL to get rendered HTML content from"`
+	ContextName   string  `json:"context_name,omitempty" jsonschema:"browser context to use (default: 'default')"`
+	Wait          *int    `json:"wait,omitempty" jsonschema:"wait time in seconds after page load before capturing HTML (overrides context default)"`
+	UpdateCookies bool    `json:"update_cookies,omitempty" jsonschema:"automatically apply set-cookie headers from response to context"`
+	ColorScheme   *string `json:"color_scheme,omitempty" jsonschema:"emulate color scheme preference: 'dark' or 'light' (overrides context default)"`
 }
 
 type ListContextsArgs struct{}
@@ -206,17 +210,26 @@ func handleConfigureContext(ctx context.Context, request *mcp.CallToolRequest, a
 		config.Headers = args.Headers
 	}
 
+	if args.ColorScheme != nil {
+		normalized, err := normalizeColorScheme(*args.ColorScheme)
+		if err != nil {
+			return newErrorResult[ConfigureContextResult](err)
+		}
+		config.ColorScheme = normalized
+	}
+
 	// Store the updated context
 	configManager.CreateOrUpdateContext(contextName, config)
 
 	// Build result configuration for response
 	resultConfig := map[string]interface{}{
-		"viewport": fmt.Sprintf("%dx%d", config.DefaultViewport.Width, config.DefaultViewport.Height),
-		"timeout":  config.DefaultTimeout,
-		"wait":     config.DefaultWait,
-		"domains":  config.DomainWhitelist,
-		"cookies":  config.Cookies,
-		"headers":  config.Headers,
+		"viewport":     fmt.Sprintf("%dx%d", config.DefaultViewport.Width, config.DefaultViewport.Height),
+		"timeout":      config.DefaultTimeout,
+		"wait":         config.DefaultWait,
+		"domains":      config.DomainWhitelist,
+		"cookies":      config.Cookies,
+		"headers":      config.Headers,
+		"color_scheme": config.ColorScheme,
 	}
 
 	result := ConfigureContextResult{
@@ -253,6 +266,15 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 		waitSeconds = *args.Wait
 	}
 
+	colorScheme := config.ColorScheme
+	if args.ColorScheme != nil {
+		normalized, err := normalizeColorScheme(*args.ColorScheme)
+		if err != nil {
+			return newErrorResult[ScreenshotResult](err)
+		}
+		colorScheme = normalized
+	}
+
 	// Create request config
 	requestConfig := &RequestConfig{
 		ViewportWidth:   config.DefaultViewport.Width,
@@ -264,6 +286,7 @@ func handleMCPScreenshot(ctx context.Context, request *mcp.CallToolRequest, args
 		FullHeight:      args.FullHeight,
 		CustomHeaders:   config.Headers,
 		Cookies:         config.Cookies,
+		ColorScheme:     colorScheme,
 		Debug:           globalDebug,
 
 		// capture everything
@@ -337,6 +360,15 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 		waitSeconds = *args.Wait
 	}
 
+	colorScheme := config.ColorScheme
+	if args.ColorScheme != nil {
+		normalized, err := normalizeColorScheme(*args.ColorScheme)
+		if err != nil {
+			return newErrorResult[ScreenshotResult](err)
+		}
+		colorScheme = normalized
+	}
+
 	// Create request config
 	requestConfig := &RequestConfig{
 		ViewportWidth:   config.DefaultViewport.Width,
@@ -348,6 +380,7 @@ func handleMCPScreenshotHTML(ctx context.Context, request *mcp.CallToolRequest, 
 		FullHeight:      args.FullHeight,
 		CustomHeaders:   config.Headers,
 		Cookies:         config.Cookies,
+		ColorScheme:     colorScheme,
 		Debug:           globalDebug,
 
 		// capture everything
@@ -421,6 +454,15 @@ func handleMCPGetHTML(ctx context.Context, request *mcp.CallToolRequest, args Ge
 		waitSeconds = *args.Wait
 	}
 
+	colorScheme := config.ColorScheme
+	if args.ColorScheme != nil {
+		normalized, err := normalizeColorScheme(*args.ColorScheme)
+		if err != nil {
+			return newErrorResult[map[string]interface{}](err)
+		}
+		colorScheme = normalized
+	}
+
 	requestConfig := &RequestConfig{
 		ViewportWidth:   config.DefaultViewport.Width,
 		ViewportHeight:  config.DefaultViewport.Height,
@@ -429,6 +471,7 @@ func handleMCPGetHTML(ctx context.Context, request *mcp.CallToolRequest, args Ge
 		DomainWhitelist: config.DomainWhitelist,
 		CustomHeaders:   config.Headers,
 		Cookies:         config.Cookies,
+		ColorScheme:     colorScheme,
 		Debug:           globalDebug,
 
 		CaptureCookies: true,

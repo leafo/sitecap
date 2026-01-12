@@ -21,7 +21,7 @@ import (
 
 // Version information set by ldflags at build time
 var (
-	buildDate = "unknown"
+	buildDate  = "unknown"
 	commitHash = "unknown"
 )
 
@@ -35,6 +35,7 @@ type RequestConfig struct {
 	FullHeight      bool
 	CustomHeaders   map[string]string
 	Cookies         []*proto.NetworkCookieParam // Cookies to set before navigation
+	ColorScheme     string
 	Debug           bool
 
 	CaptureCookies    bool // Enable cookie capture after navigation
@@ -90,6 +91,7 @@ var globalTimeout int
 var globalWait int
 var globalDomains string
 var globalFullHeight bool
+var globalColorScheme string
 
 func convertToJSONOutput(response *BrowserResponse) *JSONOutput {
 	output := &JSONOutput{
@@ -122,7 +124,20 @@ func parseCustomHeaders(headersJSON string) (map[string]string, error) {
 	return headers, nil
 }
 
-func parseRequestConfig(viewportParam, resizeParam, timeoutParam, waitParam, domainsParam string, fullHeight bool) (*RequestConfig, error) {
+func normalizeColorScheme(colorScheme string) (string, error) {
+	if colorScheme == "" {
+		return "", nil
+	}
+
+	normalized := strings.ToLower(colorScheme)
+	if normalized != "dark" && normalized != "light" {
+		return "", fmt.Errorf("invalid color-scheme value: %s (must be 'dark' or 'light')", colorScheme)
+	}
+
+	return normalized, nil
+}
+
+func parseRequestConfig(viewportParam, resizeParam, timeoutParam, waitParam, domainsParam, colorSchemeParam string, fullHeight bool) (*RequestConfig, error) {
 	config := &RequestConfig{}
 
 	// Parse viewport dimensions
@@ -158,6 +173,16 @@ func parseRequestConfig(viewportParam, resizeParam, timeoutParam, waitParam, dom
 	config.CustomHeaders = globalCustomHeaders
 	config.Debug = globalDebug
 	config.FullHeight = fullHeight
+
+	colorSchemeValue := colorSchemeParam
+	if colorSchemeValue == "" {
+		colorSchemeValue = globalColorScheme
+	}
+	colorScheme, err := normalizeColorScheme(colorSchemeValue)
+	if err != nil {
+		return nil, err
+	}
+	config.ColorScheme = colorScheme
 
 	return config, nil
 }
@@ -676,6 +701,15 @@ func executeBrowserRequest(url, htmlContent string, config *RequestConfig) (*Bro
 		}
 	}
 
+	if config.ColorScheme != "" {
+		_ = proto.EmulationSetEmulatedMedia{
+			Media: "screen",
+			Features: []*proto.EmulationMediaFeature{
+				{Name: "prefers-color-scheme", Value: config.ColorScheme},
+			},
+		}.Call(page)
+	}
+
 	// Set viewport if dimensions are specified
 	if config.ViewportWidth > 0 && config.ViewportHeight > 0 {
 		page.MustSetViewport(config.ViewportWidth, config.ViewportHeight, 1.0, false)
@@ -777,6 +811,7 @@ func main() {
 	headers := flag.String("headers", "", "JSON string of custom headers to add to the initial request (e.g. '{\"Authorization\":\"Bearer token\",\"Custom-Header\":\"value\"}')")
 	debug := flag.Bool("debug", false, "Enable debug logging of all network requests")
 	version := flag.Bool("version", false, "Print version information and exit")
+	colorScheme := flag.String("color-scheme", "", "Emulate color scheme preference: 'dark' or 'light'")
 	flag.Parse()
 
 	if *version {
@@ -792,8 +827,15 @@ func main() {
 	globalDomains = *domains
 	globalFullHeight = *fullHeight
 
-	// Parse and set global custom headers
 	var err error
+	normalizedColorScheme, err := normalizeColorScheme(*colorScheme)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing color scheme: %v\n", err)
+		os.Exit(1)
+	}
+	globalColorScheme = normalizedColorScheme
+
+	// Parse and set global custom headers
 	globalCustomHeaders, err = parseCustomHeaders(*headers)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing headers: %v\n", err)
@@ -820,7 +862,7 @@ func main() {
 		resizeParam = ""
 	}
 
-	config, err := parseRequestConfig(*viewport, resizeParam, strconv.Itoa(*timeout), strconv.Itoa(*wait), *domains, *fullHeight)
+	config, err := parseRequestConfig(*viewport, resizeParam, strconv.Itoa(*timeout), strconv.Itoa(*wait), *domains, globalColorScheme, *fullHeight)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing parameters: %v\n", err)
 		os.Exit(1)

@@ -16,6 +16,7 @@ type BrowserContextConfig struct {
 	DomainWhitelist []string
 	Cookies         []*proto.NetworkCookieParam
 	Headers         map[string]string
+	ColorScheme     string
 	LastRequestID   string
 	RequestHistory  []string // Request IDs in chronological order
 	CreatedAt       time.Time
@@ -64,6 +65,7 @@ func DefaultBrowserContextConfig() *BrowserContextConfig {
 		DomainWhitelist: domainWhitelist,
 		Cookies:         []*proto.NetworkCookieParam{},
 		Headers:         headers,
+		ColorScheme:     globalColorScheme,
 		RequestHistory:  []string{},
 	}
 }
@@ -185,6 +187,7 @@ func (m *ContextConfigManager) ListContexts() map[string]interface{} {
 			"wait":          context.DefaultWait,
 			"cookies":       context.Cookies,
 			"headers":       context.Headers,
+			"color_scheme":  context.ColorScheme,
 		}
 	}
 	return result
