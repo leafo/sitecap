@@ -811,10 +811,7 @@ func main() {
 	}
 
 	if len(flag.Args()) != 1 {
-		fmt.Fprintf(os.Stderr, "Usage: %s [--viewport WxH] [--resize WxH] [--timeout N] [--domains list] [--headers JSON] [--debug] [--http] [--mcp] [--html] [--json] <URL>\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "       %s [options] - < input.html   (use '-' to read HTML from stdin)\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "       %s --mcp   (start MCP server for Model Context Protocol over stdio)\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "       %s --http --mcp   (start streamable MCP server over HTTP)\n", os.Args[0])
+		flag.Usage()
 		os.Exit(1)
 	}
 
